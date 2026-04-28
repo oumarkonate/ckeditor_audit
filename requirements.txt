@@ -1,0 +1,10 @@
+# MCP Python SDK — installed from git main (same source as 01_terminal_server)
+# MCPServer lives in this branch and is not yet published on PyPI
+mcp @ git+https://github.com/modelcontextprotocol/python-sdk.git@main
+
+# Pydantic v2 — used for structured tool outputs (auto-generates JSON schemas for Claude)
+pydantic>=2.0
+
+# Loads project-specific env vars from a .env file at server startup.
+# Already installed as a transitive dependency of mcp, declared here for clarity.
+python-dotenv>=1.0
