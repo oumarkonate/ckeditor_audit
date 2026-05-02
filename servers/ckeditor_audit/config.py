@@ -29,6 +29,12 @@ class Settings:
     legacy_label: str
     target_label: str
 
+    # Directory names to skip during generic file searches
+    exclude_dirs: tuple[str, ...]
+
+    # Maximum number of results returned by grep/find tools
+    max_results: int
+
 
 def _load() -> Settings:
     raw_root = os.environ.get("CKEDITOR_AUDIT_PROJECT_ROOT", "").strip()
@@ -49,6 +55,11 @@ def _load() -> Settings:
     raw_extra = os.environ.get("CKEDITOR_AUDIT_EXTRA_GLOBS", "").strip()
     extra_globs = tuple(g.strip() for g in raw_extra.split(",") if g.strip())
 
+    raw_exclude = os.environ.get(
+        "CKEDITOR_AUDIT_EXCLUDE_DIRS", "node_modules,.git,dist,build,vendor"
+    ).strip()
+    exclude_dirs = tuple(d.strip() for d in raw_exclude.split(",") if d.strip())
+
     return Settings(
         project_root=project_root,
         plugins_glob=os.environ.get(
@@ -60,6 +71,8 @@ def _load() -> Settings:
         extra_globs=extra_globs,
         legacy_label=os.environ.get("CKEDITOR_AUDIT_LEGACY_LABEL", "legacy"),
         target_label=os.environ.get("CKEDITOR_AUDIT_TARGET_LABEL", "latest"),
+        exclude_dirs=exclude_dirs,
+        max_results=int(os.environ.get("CKEDITOR_AUDIT_MAX_RESULTS", "50")),
     )
 
 

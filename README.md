@@ -20,12 +20,31 @@ The server also improves accuracy: it catches usages in commented-out code and s
 
 ## Tools
 
+### CKEditor audit tools
+
 | Tool | Description |
 |---|---|
 | `list_patterns` | Returns the known legacy → latest pattern mapping table |
-| `audit_plugin` | Detailed migration report for a single plugin |
+| `audit_plugin` | Detailed migration report for a single plugin (issues, config refs, file list) |
 | `audit_all` | Summary migration status for all detected plugins |
-| `find_usages` | Lists config files that reference a given plugin |
+| `find_usages` | Lists config files that reference a given plugin (active vs commented) |
+
+### Generic file search tools
+
+| Tool | Description |
+|---|---|
+| `find_files` | Find project files by name pattern (case-insensitive, optional extension filter) |
+| `grep_code` | Search files with a regex or plain-text query — one snippet per matching line |
+| `grep_with_context` | Same as `grep_code` with N surrounding lines for context (default ±3, max ±10) |
+| `read_file` | Read any project file by relative path, in 200-line chunks |
+| `count_matches` | Count pattern occurrences without returning snippets — use before `grep_code` to gauge scope |
+
+### Git-aware search tools
+
+| Tool | Description |
+|---|---|
+| `git_changed_files` | List files changed in the git working tree (unstaged / staged / all / SHA) |
+| `grep_changed` | Run a pattern search restricted to git-changed files — fast targeted audit post-migration |
 
 ## Quick test
 
@@ -36,6 +55,14 @@ Use audit_all to give me the migration status of all CKEditor plugins
 Use audit_plugin on "ckeditor5-box"
 Use find_usages on "ckeditor5-box"
 Use list_patterns to show me all known legacy patterns
+
+Use find_files to find all files whose name contains "plugin" with extension "js"
+Use count_matches to count how many times "ClassicEditor" appears in the project
+Use grep_code to search for "from '@ckeditor" in js files
+Use grep_with_context on "import.*ckeditor5" with 5 context lines
+Use read_file to read "assets/ckeditor/ckeditor5-box/src/box.js"
+Use git_changed_files to list unstaged changes
+Use grep_changed to search for "@ckeditor" only in modified files
 ```
 
 ## Setup
