@@ -68,18 +68,17 @@ Add the following block (merge with existing `mcpServers` if present):
 {
   "mcpServers": {
     "ckeditor-audit": {
-      "command": "/path/to/ckeditor_audit/.venv/bin/python3",
+      "command": "/path/to/mcp/servers/ckeditor_audit/.venv/bin/python3",
       "args": ["-m", "ckeditor_audit"],
-      "cwd": "/path/to/ckeditor_audit/servers",
       "env": {
-        "PYTHONPATH": "/path/to/ckeditor_audit/servers"
+        "PYTHONPATH": "/path/to/mcp/servers"
       }
     }
   }
 }
 ```
 
-> **Note:** `PYTHONPATH` must stay in `claude_desktop_config.json` — it is a Python module resolution constraint, not a project setting. Project-specific variables go in `.env`.
+> **Note:** `PYTHONPATH` must point to the **parent directory** of `ckeditor_audit/` so that `python -m ckeditor_audit` can resolve the package. Project-specific variables go in `.env`.
 
 Fully quit and restart Claude Desktop after any change to this file (no hot-reload).
 
@@ -117,7 +116,7 @@ The patterns that are actually detected come from `servers/ckeditor_audit/lib/pa
 
 | Variable | Where to set | Default | Description |
 |---|---|---|---|
-| `PYTHONPATH` | `claude_desktop_config.json` | *(required)* | Python module resolution — must point to the `servers/` directory |
+| `PYTHONPATH` | `claude_desktop_config.json` | *(required)* | Python module resolution — must point to the parent directory of `ckeditor_audit/` |
 
 The default globs match a standard project layout. Override them in `.env` if your project uses a different structure.
 
@@ -178,4 +177,4 @@ After restarting, open a new conversation. The MCP tools icon should list `ckedi
 
 ## 8. Adding new patterns
 
-When a migration reveals a new legacy → latest pattern, add it to `servers/ckeditor_audit/lib/patterns.py` and restart Claude Desktop.
+When a migration reveals a new legacy → latest pattern, add it to `lib/patterns.py` and restart Claude Desktop.
