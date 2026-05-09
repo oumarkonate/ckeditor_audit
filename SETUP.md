@@ -8,25 +8,46 @@
 
 ## 1. Install
 
+**macOS / Linux**
+
 ```bash
-cd /home/konate/IA/mcp/servers/ckeditor_audit
-python -m venv .venv
+cd /path/to/mcp/ckeditor_audit
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+**Windows (PowerShell)**
+
+```powershell
+cd C:\path\to\mcp\ckeditor_audit
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+> No need to activate the venv — calling `.venv\Scripts\pip` directly installs into the correct environment.
+
 What each command does:
 - **`python -m venv .venv`** — creates an isolated Python environment in the `.venv/` folder, with its own `python` and `pip` independent from the system.
-- **`source .venv/bin/activate`** — activates the environment in the current terminal, redirecting `python` and `pip` to the ones inside `.venv/`. Temporary — only applies to the current terminal session.
-- **`pip install -r requirements.txt`** — reads `requirements.txt` and installs each package **inside the active venv** (not system-wide).
+- **`pip install -r requirements.txt`** — installs each package inside the venv (not system-wide).
 
 ## 2. Smoke test (without Claude Desktop)
 
 Run the server directly. It will wait on stdin — that is expected (stdio transport).
 
+**macOS / Linux**
+
 ```bash
 CKEDITOR_AUDIT_PROJECT_ROOT=/path/to/your/project \
-  .venv/bin/python -m ckeditor_audit
+  .venv/bin/python3 -m ckeditor_audit
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:PYTHONPATH = "C:\path\to\mcp"
+$env:CKEDITOR_AUDIT_PROJECT_ROOT = "C:\path\to\your\project"
+& "C:\path\to\mcp\ckeditor_audit\.venv\Scripts\python.exe" -m ckeditor_audit
 ```
 
 Press `Ctrl+C` to stop.
@@ -35,9 +56,18 @@ Press `Ctrl+C` to stop.
 
 The MCP Inspector is an interactive UI to call tools manually and verify their schemas.
 
+**macOS / Linux**
+
 ```bash
 npx @modelcontextprotocol/inspector \
-  .venv/bin/python -m ckeditor_audit
+  .venv/bin/python3 -m ckeditor_audit
+```
+
+**Windows (PowerShell)**
+
+```powershell
+npx @modelcontextprotocol/inspector `
+  .venv\Scripts\python.exe -m ckeditor_audit
 ```
 
 Set the `CKEDITOR_AUDIT_PROJECT_ROOT` env var in the Inspector UI before calling tools.
@@ -46,43 +76,80 @@ Set the `CKEDITOR_AUDIT_PROJECT_ROOT` env var in the Inspector UI before calling
 
 Project-specific settings are stored in a `.env` file at the server root — **never committed to git**.
 
+**macOS / Linux**
+
 ```bash
 cp .env.example .env
-# Edit .env and set at least CKEDITOR_AUDIT_PROJECT_ROOT
 ```
 
-Minimum `.env`:
+**Windows (PowerShell)**
+
+```powershell
+copy .env.example .env
+```
+
+Edit `.env` and set at least `CKEDITOR_AUDIT_PROJECT_ROOT`:
+
 ```dotenv
-CKEDITOR_AUDIT_PROJECT_ROOT=/path/to/your/project
+CKEDITOR_AUDIT_PROJECT_ROOT=/path/to/your/project      # macOS / Linux
+CKEDITOR_AUDIT_PROJECT_ROOT=C:\path\to\your\project    # Windows
 ```
 
 The server loads this file automatically at startup via `python-dotenv`. Any variable already set in the OS environment (or in `claude_desktop_config.json`) takes precedence.
 
 ## 5. Register in Claude Desktop
 
-On Linux, the config file is at: `~/.config/Claude/claude_desktop_config.json`
+Open the configuration file:
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
 Add the following block (merge with existing `mcpServers` if present):
+
+**macOS / Linux**
 
 ```json
 {
   "mcpServers": {
-    "ckeditor-audit": {
-      "command": "/path/to/mcp/servers/ckeditor_audit/.venv/bin/python3",
+    "ckeditor_audit": {
+      "command": "/path/to/mcp/ckeditor_audit/.venv/bin/python3",
       "args": ["-m", "ckeditor_audit"],
       "env": {
-        "PYTHONPATH": "/path/to/mcp/servers"
+        "PYTHONPATH": "/path/to/mcp"
       }
     }
   }
 }
 ```
 
-> **Note:** `PYTHONPATH` must point to the **parent directory** of `ckeditor_audit/` so that `python -m ckeditor_audit` can resolve the package. Project-specific variables go in `.env`.
+**Windows**
+
+```json
+{
+  "mcpServers": {
+    "ckeditor_audit": {
+      "command": "C:\\path\\to\\mcp\\ckeditor_audit\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "ckeditor_audit"],
+      "env": {
+        "PYTHONPATH": "C:\\path\\to\\mcp"
+      }
+    }
+  }
+}
+```
+
+> `PYTHONPATH` must point to the **parent directory** of `ckeditor_audit/` so that `python -m ckeditor_audit` can resolve the package. Project-specific variables (`CKEDITOR_AUDIT_PROJECT_ROOT`, etc.) go in `.env`.
+
+See `claude_desktop_config.json.linux.example` (Linux/macOS) and `claude_desktop_config.json.windows.example` (Windows) for ready-to-copy templates.
 
 Fully quit and restart Claude Desktop after any change to this file (no hot-reload).
 
-## 6. Environment variables reference
+## 6. Register in Claude Code (VS Code / CLI)
+
+Add a `.mcp.json` at the root of your project — same format as above.
+
+## 7. Environment variables reference
 
 ### CKEditor audit variables
 
@@ -103,22 +170,20 @@ CKEDITOR_AUDIT_LEGACY_LABEL=v26
 CKEDITOR_AUDIT_TARGET_LABEL=v47
 ```
 
-The patterns that are actually detected come from `servers/ckeditor_audit/lib/patterns.py`. The labels tell Claude *how to name* the versions; the patterns table tells it *what to look for*.
+The patterns that are actually detected come from `lib/patterns.py`. The labels tell Claude *how to name* the versions; the patterns table tells it *what to look for*.
 
 ### Generic file search variables
 
 | Variable | Where to set | Default | Description |
 |---|---|---|---|
 | `CKEDITOR_AUDIT_EXCLUDE_DIRS` | `.env` | `node_modules,.git,dist,build,vendor` | Comma-separated directory names to skip in `find_files`, `grep_code`, `grep_with_context`, `count_matches` |
-| `CKEDITOR_AUDIT_MAX_RESULTS` | `.env` | `50` | Maximum number of matches returned by `find_files`, `grep_code`, `grep_with_context` |
+| `CKEDITOR_AUDIT_MAX_RESULTS` | `.env` | `50` | Maximum number of matches returned by `grep`/`find` tools |
 
 ### Claude Desktop variable
 
 | Variable | Where to set | Default | Description |
 |---|---|---|---|
-| `PYTHONPATH` | `claude_desktop_config.json` | *(required)* | Python module resolution — must point to the parent directory of `ckeditor_audit/` |
-
-The default globs match a standard project layout. Override them in `.env` if your project uses a different structure.
+| `PYTHONPATH` | `claude_desktop_config.json` | *(required)* | Must point to the parent directory of `ckeditor_audit/` |
 
 ### CKEDITOR_AUDIT_EXTRA_GLOBS — extending the usage search
 
@@ -134,11 +199,9 @@ Example `.env` entry for a project with multiple registry files:
 CKEDITOR_AUDIT_EXTRA_GLOBS=assets/ckeditor/ckeditor.js,config/figaro/ckeditor5.yaml,src/Domain/Form/Type/CKEditor5Type.php,assets/config/ckeditor/plugins.js
 ```
 
-The comment detection is a line-level heuristic: a line is considered commented if its first non-whitespace characters are `//`, `#`, `*`, or `/*`. This covers JS, PHP, and YAML.
+## 8. Verify in Claude Desktop
 
-## 6. Verify in Claude Desktop
-
-After restarting, open a new conversation. The MCP tools icon should list `ckeditor-audit` with its 11 tools.
+After restarting, open a new conversation. The MCP tools icon should list `ckeditor_audit` with its 11 tools.
 
 **Audit tools:**
 
@@ -168,13 +231,17 @@ After restarting, open a new conversation. The MCP tools icon should list `ckedi
 
 > Use `grep_changed` to search for "@ckeditor" only in modified files
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
-- **Tool not listed** → check the absolute path to the venv Python binary
-- **`RuntimeError: CKEDITOR_AUDIT_PROJECT_ROOT is not set`** → the `env` block in the config is missing or misplaced
-- **Logs** → `~/.config/Claude/logs/mcp-server-ckeditor-audit.log`
-- Always restart Claude Desktop fully after config changes
+| Problem | Cause | Fix |
+|---|---|---|
+| Tool not listed in Claude | Wrong path to `python.exe` | Use the full absolute path to `.venv\Scripts\python.exe` (Windows) or `.venv/bin/python3` (Linux/macOS) |
+| `RuntimeError: CKEDITOR_AUDIT_PROJECT_ROOT is not set` | Missing env var | Set it in `.env` or in the `env` block of the config |
+| `RuntimeError: does not point to a directory` | Path doesn't exist | Check the path — on Windows use `\\` or `/` as separator |
+| Server not appearing after config change | Claude not restarted | Fully quit and reopen Claude Desktop |
+| **Logs — Linux/macOS** | | `~/.config/Claude/logs/mcp-server-ckeditor-audit.log` |
+| **Logs — Windows** | | `%APPDATA%\Claude\logs\mcp-server-ckeditor-audit.log` |
 
-## 8. Adding new patterns
+## 10. Adding new patterns
 
 When a migration reveals a new legacy → latest pattern, add it to `lib/patterns.py` and restart Claude Desktop.

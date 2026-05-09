@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ckeditor_audit": {
+      "command": "/absolute/path/to/mcp/ckeditor_audit/.venv/bin/python3",
+      "args": ["-m", "ckeditor_audit"],
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/mcp",
+        "CKEDITOR_AUDIT_PROJECT_ROOT": "/absolute/path/to/your/project"
+      }
+    }
+  }
+}
