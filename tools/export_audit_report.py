@@ -14,6 +14,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from ckeditor_audit.config import settings
+from ckeditor_audit.lib.constants import GIT_TIMEOUT, TOKENS_PER_PLUGIN_REPORT
 from ckeditor_audit.lib.patterns import PATTERNS
 from ckeditor_audit.lib.scanner import (
     configs_using,
@@ -45,7 +46,7 @@ def _git_info(root: Path) -> dict:
             cwd=root,
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=GIT_TIMEOUT,
         )
         return r.stdout.strip() if r.returncode == 0 else None
 
@@ -127,7 +128,7 @@ def _issues_table(hits: list, lines: list) -> None:
             "|---------|-------|--------|--------------|",
         ]
         for h in cat_hits:
-            legacy_short = h.pattern.legacy[:60].replace("|", "\\|")
+            legacy_short = h.matched[:60].replace("|", "\\|")
             repl_short = h.pattern.replacement[:60].replace("|", "\\|")
             lines.append(
                 f"| `{h.file}` | {h.line} | `{legacy_short}` | `{repl_short}` |"
@@ -194,7 +195,7 @@ def export_audit_report(
     migrated_rows = [r for r in rows if r["status"] == "migrated"]
 
     # ── Build Markdown (always, used for auto-save and for format="markdown") ──
-    estimated_tokens_saved = total * 800
+    estimated_tokens_saved = total * TOKENS_PER_PLUGIN_REPORT
     pct_partial = round(100 * partial / total) if total else 0
     pct_nm = round(100 * not_migrated_count / total) if total else 0
 
@@ -338,7 +339,7 @@ def export_audit_report(
                         "file": h.file,
                         "line": h.line,
                         "category": h.pattern.category,
-                        "legacy": h.pattern.legacy,
+                        "legacy": h.matched,
                         "replacement": h.pattern.replacement,
                     }
                     for h in r["hits"]
@@ -405,7 +406,7 @@ def export_audit_report(
         output_path=written_path,
         token_savings=TokenSavings(
             files_scanned=total,
-            estimated_tokens_saved=total * 800,
+            estimated_tokens_saved=total * TOKENS_PER_PLUGIN_REPORT,
             note=(
                 f"audited {total} plugin(s): "
                 f"{migrated} migrated, {partial} partial, {not_migrated_count} not_migrated"

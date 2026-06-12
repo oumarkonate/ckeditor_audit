@@ -31,6 +31,7 @@ def register_prompts(mcp) -> None:
             "migrated": "✅ Fully migrated — no legacy imports detected.",
             "partial": "⚠️ Partially migrated — legacy and modern imports coexist.",
             "not_migrated": "❌ Not migrated — only legacy imports found.",
+            "no_imports": "➖ No CKEditor imports — nothing to migrate.",
         }.get(status, f"Unknown status: {status}")
 
         lines = [
@@ -48,7 +49,7 @@ def register_prompts(mcp) -> None:
                 "|------|------|--------|-------------|",
             ]
             for h in hits:
-                legacy_short = h.pattern.legacy[:50].replace("|", "\\|")
+                legacy_short = h.matched[:50].replace("|", "\\|")
                 repl_short = h.pattern.replacement[:50].replace("|", "\\|")
                 lines.append(f"| `{h.file}` | {h.line} | `{legacy_short}` | `{repl_short}` |")
             lines.append("")
@@ -65,11 +66,11 @@ def register_prompts(mcp) -> None:
             ]
             seen = set()
             for h in hits:
-                key = h.pattern.legacy
+                key = h.matched
                 if key not in seen:
                     seen.add(key)
                     lines += [
-                        f"**{h.pattern.category.upper()}** — `{h.pattern.legacy}`",
+                        f"**{h.pattern.category.upper()}** — `{h.matched}`",
                         f"→ `{h.pattern.replacement}`",
                         f"_{h.pattern.description}_",
                         "",

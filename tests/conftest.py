@@ -8,6 +8,7 @@ Creates a temporary project with:
 - One config file referencing two plugins
 """
 
+import json
 import os
 import pytest
 
@@ -44,6 +45,35 @@ def project_root(tmp_path_factory):
         "const schema = { allowIn: 'root' };\n",
         encoding="utf-8",
     )
+    (image.parent / "package.json").write_text(
+        json.dumps({
+            "name": "@acme/ckeditor5-image",
+            "version": "1.2.3",
+            "dependencies": {
+                "@ckeditor/ckeditor5-core": "^41.0.0",
+                "@ckeditor/ckeditor5-widget": "^41.0.0",
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    # box declares the modern flat package
+    (box.parent / "package.json").write_text(
+        json.dumps({
+            "name": "@acme/ckeditor5-box",
+            "version": "2.0.0",
+            "dependencies": {"ckeditor5": "^42.0.0"},
+        }),
+        encoding="utf-8",
+    )
+
+    # --- ckeditor5-empty (no CKEditor imports at all) ---
+    empty = root / "assets/ckeditor/ckeditor5-empty/src"
+    empty.mkdir(parents=True)
+    (empty / "noop.js").write_text(
+        "export const VERSION = '1.0.0';\n",
+        encoding="utf-8",
+    )
 
     # --- Config file referencing plugins ---
     config_dir = root / "assets/config/ckeditor"
@@ -51,6 +81,39 @@ def project_root(tmp_path_factory):
     (config_dir / "article_config.js").write_text(
         "import ckeditor5Box from 'ckeditor5-box';\n"
         "// import ckeditor5Image from 'ckeditor5-image'; // disabled\n",
+        encoding="utf-8",
+    )
+
+    # --- Application code (outside the plugins glob) for code-intelligence tools ---
+    # A Symfony-style PHP controller: class with extends/implements, a #[Route]
+    # attribute, and a method that calls another method.
+    app_php = root / "app/Controller"
+    app_php.mkdir(parents=True)
+    (app_php / "ArticleController.php").write_text(
+        "<?php\n"
+        "namespace App\\Controller;\n"
+        "\n"
+        "class ArticleController extends AbstractController implements ControllerInterface\n"
+        "{\n"
+        "    #[Route('/articles', methods: ['GET'])]\n"
+        "    public function list(): Response\n"
+        "    {\n"
+        "        return $this->render('list.html.twig');\n"
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    # A JS module with a class, methods, and an internal call (init -> doThing).
+    app_js = root / "app/js"
+    app_js.mkdir(parents=True)
+    (app_js / "widget.js").write_text(
+        "export default class CustomWidget extends Plugin {\n"
+        "    init() {\n"
+        "        this.doThing();\n"
+        "    }\n"
+        "    doThing() {}\n"
+        "}\n",
         encoding="utf-8",
     )
 

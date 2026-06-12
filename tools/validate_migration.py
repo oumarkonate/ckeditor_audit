@@ -7,10 +7,9 @@ Use this at the end of a migration session to verify the work is complete.
 
 from pydantic import BaseModel
 
+from ckeditor_audit.lib.constants import TOKENS_PER_PLUGIN_FILE
 from ckeditor_audit.lib.scanner import detect_status, find_pattern_hits
 from ckeditor_audit.tools.common import TokenSavings
-
-_TOKENS_PER_FILE = 400
 
 
 class RemainingHit(BaseModel):
@@ -49,12 +48,14 @@ def validate_migration(plugin: str) -> ValidateMigrationReport:
         RemainingHit(
             file=h.file,
             line=h.line,
-            legacy=h.pattern.legacy,
+            legacy=h.matched,
             category=h.pattern.category,
         )
         for h in hits
     ]
-    clean = len(remaining) == 0 and status == "migrated"
+    # A plugin is clean when no legacy hits remain and it is not mid-migration.
+    # "no_imports" (nothing to migrate) counts as clean too.
+    clean = len(remaining) == 0 and status in ("migrated", "no_imports")
 
     return ValidateMigrationReport(
         plugin=plugin,
@@ -63,7 +64,7 @@ def validate_migration(plugin: str) -> ValidateMigrationReport:
         remaining_hits=remaining,
         token_savings=TokenSavings(
             files_scanned=files_count,
-            estimated_tokens_saved=files_count * _TOKENS_PER_FILE,
+            estimated_tokens_saved=files_count * TOKENS_PER_PLUGIN_FILE,
             note=(
                 f"plugin '{plugin}' is {'clean' if clean else 'not clean'} — "
                 f"{len(remaining)} legacy hit(s) remaining"

@@ -11,10 +11,9 @@ covered when the project owner configures the extra globs.
 
 from pydantic import BaseModel
 
+from ckeditor_audit.lib.constants import TOKENS_PER_CONFIG_FILE
 from ckeditor_audit.lib.scanner import configs_using
 from ckeditor_audit.tools.common import TokenSavings
-
-_TOKENS_PER_CONFIG_FILE = 300
 
 
 class FileUsage(BaseModel):
@@ -61,7 +60,7 @@ def find_plugin_usages(plugin: str) -> FindPluginUsagesReport:
         FileUsage(file=u.file, active=u.active, commented=u.commented)
         for u in raw
     ]
-    estimated_saved = n_candidates * _TOKENS_PER_CONFIG_FILE
+    estimated_saved = n_candidates * TOKENS_PER_CONFIG_FILE
     return FindPluginUsagesReport(
         usages=usages,
         token_savings=TokenSavings(
