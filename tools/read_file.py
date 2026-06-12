@@ -1,22 +1,14 @@
-"""
-Tool: read_file
-
-Reads a project file by its path relative to project root.
-Returns a 200-line chunk by default; use start_line/end_line for large files.
-"""
-
 from pydantic import BaseModel
 
-from ckeditor_audit.config import settings
-from ckeditor_audit.lib.searcher import TOKENS_PER_FILE_SEARCH
+from ckeditor_audit.lib.searcher import read_file as _read_file
 from ckeditor_audit.tools.common import TokenSavings
 
-_DEFAULT_CHUNK = 200
+_TOKENS_PER_FILE = 1200
 
 
 class ReadFileResult(BaseModel):
-    content: str       # file content, lines prefixed with their number
-    total_lines: int   # total lines in the file (useful to detect truncation)
+    content: str
+    total_lines: int
     token_savings: TokenSavings
 
 
@@ -25,59 +17,25 @@ def read_file(
     start_line: int | None = None,
     end_line: int | None = None,
 ) -> ReadFileResult:
+    """Read a file's content with an optional line range.
+
+    Args:
+        path: Relative path from project root (e.g. "src/Domain/Services/ContentService.php").
+        start_line: First line to read, 1-indexed. Defaults to 1.
+        end_line: Last line to read, inclusive, 1-indexed. Defaults to start_line + 199.
+
+    Returns:
+        content: File content for the requested range.
+        total_lines: Total number of lines in the file.
+        token_savings: estimated tokens saved vs. Claude reading the full file directly.
     """
-    Read a project file (path relative to project root).
-
-    Returns at most 200 lines by default, starting from line 1.
-    Use `start_line` and `end_line` (1-indexed, inclusive) to read a specific
-    range. Check `total_lines` to know whether more content exists beyond the
-    returned chunk.
-
-    Lines are prefixed with their line number for easy navigation,
-    e.g. "42: import { Plugin } from 'ckeditor5'".
-    """
-    full_path = settings.project_root / path
-
-    if not full_path.is_file():
-        return ReadFileResult(
-            content=f"File not found: {path}",
-            total_lines=0,
-            token_savings=TokenSavings(
-                files_scanned=0,
-                estimated_tokens_saved=0,
-                note="file not found — check the path relative to project root",
-            ),
-        )
-
-    try:
-        lines = full_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-    except OSError as exc:
-        return ReadFileResult(
-            content=f"Error reading file: {exc}",
-            total_lines=0,
-            token_savings=TokenSavings(
-                files_scanned=0,
-                estimated_tokens_saved=0,
-                note="OS error while reading file",
-            ),
-        )
-
-    total = len(lines)
-    start = max(1, start_line or 1)
-    end = min(end_line or (start + _DEFAULT_CHUNK - 1), total)
-
-    chunk = lines[start - 1 : end]
-    content = "\n".join(f"{start + i}: {line}" for i, line in enumerate(chunk))
-
+    content, total_lines = _read_file(path, start_line, end_line)
     return ReadFileResult(
         content=content,
-        total_lines=total,
+        total_lines=total_lines,
         token_savings=TokenSavings(
             files_scanned=1,
-            estimated_tokens_saved=TOKENS_PER_FILE_SEARCH,
-            note=(
-                f"read lines {start}–{end} of {total} in '{path}'"
-                + (f" ({total - end} lines remaining)" if end < total else "")
-            ),
+            estimated_tokens_saved=_TOKENS_PER_FILE,
+            note=f"read {path} ({total_lines} lines total)",
         ),
     )

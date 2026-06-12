@@ -1,6 +1,6 @@
 # ckeditor-audit MCP server
 
-A read-only MCP server that audits CKEditor custom plugins and reports their migration status from a legacy version to the latest.
+A read-only MCP server that audits CKEditor custom plugins, reports migration status, and provides full-featured code search powered by ripgrep and ast-grep.
 
 ## Why this server exists — token savings
 
@@ -18,33 +18,85 @@ This server pre-indexes all of that. One `audit_plugin` call returns a ~200-toke
 
 The server also improves accuracy: it catches usages in commented-out code and searches across all relevant file types (JS entry files, YAML configs, PHP constants, plugin registries) — coverage that ad-hoc `grep` calls during a session often miss.
 
-## Tools
+## Tools (32 total)
 
-### CKEditor audit tools
+### CKEditor audit tools (domain-specific)
 
 | Tool | Description |
 |---|---|
 | `list_patterns` | Returns the known legacy → latest pattern mapping table |
 | `audit_plugin` | Detailed migration report for a single plugin (issues, config refs, file list) |
 | `audit_all` | Summary migration status for all detected plugins |
-| `find_usages` | Lists config files that reference a given plugin (active vs commented) |
+| `find_plugin_usages` | Lists config files that reference a given plugin (active vs commented) |
 
-### Generic file search tools
+### Migration assistance tools
+
+| Tool | Description |
+|---|---|
+| `suggest_migration` | For each legacy pattern detected, returns file, line, legacy signature, and modern replacement — ready to apply |
+| `validate_migration` | Confirms no legacy signatures remain in a plugin; returns `clean: true` when fully migrated |
+| `export_audit_report` | Generates a full Markdown or JSON report for all plugins; writes to file if `output_path` is provided |
+
+### Navigation & file I/O
 
 | Tool | Description |
 |---|---|
 | `find_files` | Find project files by name pattern (case-insensitive, optional extension filter) |
-| `grep_code` | Search files with a regex or plain-text query — one snippet per matching line |
-| `grep_with_context` | Same as `grep_code` with N surrounding lines for context (default ±3, max ±10) |
+| `directory_tree` | Show directory structure as a tree (configurable depth, extension filter) |
 | `read_file` | Read any project file by relative path, in 200-line chunks |
-| `count_matches` | Count pattern occurrences without returning snippets — use before `grep_code` to gauge scope |
+| `get_file_outline` | List classes, methods, and functions with line numbers (AST-backed for JS/TS) |
 
-### Git-aware search tools
+### Search (ripgrep-backed, 10-100× faster when `rg` is installed)
+
+| Tool | Description |
+|---|---|
+| `grep_code` | Regex/text search — smart-case, ranking, pagination, compact output |
+| `grep_with_context` | Same as `grep_code` with N surrounding lines (default ±3, max ±10) |
+| `count_matches` | Count occurrences without fetching snippets — use before `grep_code` to gauge scope |
+| `multi_search` | Run up to 10 `grep_code` queries in parallel |
+
+### AST structural search
+
+| Tool | Description |
+|---|---|
+| `ast_search` | Find code by structure, not text — supports JS, TS, TSX, PHP. Pattern syntax: `class $NAME extends $BASE` |
+
+### Code intelligence
+
+| Tool | Description |
+|---|---|
+| `find_class` | Find class/interface declarations by name (AST-backed for JS/TS/PHP) |
+| `find_method` | Find method/function declarations, optionally scoped to a class |
+| `find_implementations` | Find classes implementing a given interface |
+| `find_extends` | Find classes extending a given base class |
+| `find_definition` | Universal lookup: class → method → route → grep fallback |
+| `find_usages` | Find all usages of a code symbol, ranked by relevance |
+| `who_calls` | Find all call sites of a method, with the enclosing caller name |
+| `what_calls` | Find all outgoing calls from a method body |
+
+### Framework-specific
+
+| Tool | Description |
+|---|---|
+| `find_route` | Find Symfony routes (PHP 8 attributes, annotations, YAML) |
+| `find_tests` | Find test files for a source file (PHPUnit, Jest, Playwright) |
+| `find_source` | Inverse: find the source file for a test file |
+
+### Git-aware search
 
 | Tool | Description |
 |---|---|
 | `git_changed_files` | List files changed in the git working tree (unstaged / staged / all / SHA) |
-| `grep_changed` | Run a pattern search restricted to git-changed files — fast targeted audit post-migration |
+| `grep_changed` | Run a pattern search restricted to git-changed files |
+| `find_in_file_diff` | Get git hunk line ranges for a file |
+
+## MCP Resources & Prompts
+
+### Resources
+- `ckeditor://patterns` — The full legacy → latest pattern table as JSON. Read without a tool call.
+
+### Prompts
+- `migrate_plugin(plugin)` — Guided step-by-step migration prompt: assembles current status, detected legacy patterns, and concrete instructions.
 
 ## Quick test
 
@@ -52,18 +104,33 @@ Once installed, open a new conversation in Claude Desktop and try:
 
 ```
 Use audit_all to give me the migration status of all CKEditor plugins
-Use audit_plugin on "ckeditor5-box"
-Use find_usages on "ckeditor5-box"
-Use list_patterns to show me all known legacy patterns
+Use suggest_migration on "ckeditor5-image" to get actionable fixes
+Use validate_migration on "ckeditor5-box" to confirm it's clean
+Use export_audit_report with format="markdown" to get a full report
 
-Use find_files to find all files whose name contains "plugin" with extension "js"
-Use count_matches to count how many times "ClassicEditor" appears in the project
 Use grep_code to search for "from '@ckeditor" in js files
-Use grep_with_context on "import.*ckeditor5" with 5 context lines
-Use read_file to read "assets/ckeditor/ckeditor5-box/src/box.js"
-Use git_changed_files to list unstaged changes
-Use grep_changed to search for "@ckeditor" only in modified files
+Use find_class to find the Box class
+Use who_calls on method "init"
+Use ast_search with pattern "class $NAME extends Plugin" and lang "javascript"
 ```
+
+## Dependencies
+
+### Python packages (auto-installed via `pip install -r requirements.txt`)
+- `mcp` — Official MCP Python SDK
+- `pydantic>=2.0` — Structured tool outputs
+- `python-dotenv>=1.0` — `.env` loading
+- `rapidfuzz>=3.0` — Fuzzy matching for symbol searches (gracefully absent)
+- `ast-grep-py>=0.38` — AST structural search for JS/TS/PHP (gracefully absent)
+- `pathspec>=0.12` — `.gitignore` integration
+
+### System binary (optional, strongly recommended)
+- **ripgrep** (`rg`) — 10-100× faster grep. Install via:
+  - Linux: `sudo apt install ripgrep` or `cargo install ripgrep`
+  - macOS: `brew install ripgrep`
+  - Windows: `winget install BurntSushi.ripgrep.MSVC`
+
+When `rg` is not found, the server falls back to Python `re` — all tools still work.
 
 ## Setup
 

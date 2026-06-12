@@ -1,20 +1,19 @@
-"""
-Tool: count_matches
-
-Counts occurrences of a pattern across project files without returning snippets.
-Use this before grep_code to gauge the scope of a search.
-"""
+from __future__ import annotations
 
 from pydantic import BaseModel
 
-from ckeditor_audit.lib.searcher import TOKENS_PER_FILE_SEARCH, count_pattern
+from ckeditor_audit.lib.searcher import count_matches as _count_matches
+from ckeditor_audit.config import settings
 from ckeditor_audit.tools.common import TokenSavings
+
+_TOKENS_PER_FILE = 1200
 
 
 class CountMatchesReport(BaseModel):
-    total_matches: int   # total number of matching lines across all files
-    files_matched: int   # number of files that contain at least one match
-    files_searched: int  # total number of files scanned
+    total_matches: int
+    files_matched: int
+    files_searched: int
+    suggestion: str | None = None
     token_savings: TokenSavings
 
 
@@ -22,27 +21,62 @@ def count_matches(
     query: str,
     directory: str | None = None,
     extensions: list[str] | None = None,
+    whole_word: bool = False,
+    fixed_string: bool = False,
+    case_sensitive: bool | str = "smart",
+    path_glob: str | None = None,
 ) -> CountMatchesReport:
-    """
-    Count occurrences of `query` across project files without returning snippets.
+    """Count occurrences of a pattern without fetching all results.
 
-    Useful before calling grep_code: if total_matches is large, narrow your
-    search with `directory` or `extensions` filters, or refine the regex.
+    Use this BEFORE grep_code when you suspect there may be many matches and want to
+    decide whether to refine the pattern first. If total_matches > max_results, add
+    whole_word=True, a directory, or a path_glob to narrow down.
 
-    `query` follows the same regex-or-literal rules as grep_code.
+    Args:
+        query: Regex pattern (or plain text) to count.
+        directory: Optional subdirectory to restrict the search.
+        extensions: Optional file extensions to search.
+        whole_word: Match whole words only.
+        fixed_string: Treat query as literal string.
+        case_sensitive: True, False, or "smart".
+        path_glob: Glob pattern like "src/**/*.php".
+
+    Returns:
+        total_matches: Total pattern occurrences.
+        files_matched: Files with at least one match.
+        files_searched: Total files scanned.
+        suggestion: Advice when total_matches is very large.
+        token_savings: Estimated tokens saved vs. reading files.
     """
-    total, files_matched, files_searched = count_pattern(query, directory, extensions)
+    raw = _count_matches(
+        query=query,
+        directory=directory,
+        extensions=extensions,
+        whole_word=whole_word,
+        fixed_string=fixed_string,
+        case_sensitive=case_sensitive,
+        path_glob=path_glob,
+    )
+    files_searched = raw["files_searched"]
+    total = raw["total_matches"]
+    limit = settings.max_results
+
+    suggestion = None
+    if total > limit * 5:
+        suggestion = (
+            f"{total} matches found. Consider adding whole_word=True, "
+            "a directory filter, or a path_glob to narrow results before running grep_code."
+        )
 
     return CountMatchesReport(
-        total_matches=total,
-        files_matched=files_matched,
-        files_searched=files_searched,
+        **raw,
+        suggestion=suggestion,
         token_savings=TokenSavings(
             files_scanned=files_searched,
-            estimated_tokens_saved=files_searched * TOKENS_PER_FILE_SEARCH,
+            estimated_tokens_saved=files_searched * _TOKENS_PER_FILE,
             note=(
-                f"scanned {files_searched} file(s): "
-                f"{total} match(es) across {files_matched} file(s) for '{query}'"
+                f"backend={'rg' if settings.backend == 'rg' else 'python'}, "
+                f"{files_searched} file(s) searched, {total} match(es) in {raw['files_matched']} file(s)"
             ),
         ),
     )
