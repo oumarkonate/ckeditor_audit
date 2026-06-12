@@ -98,6 +98,18 @@ The server also improves accuracy: it catches usages in commented-out code and s
 ### Prompts
 - `migrate_plugin(plugin)` — Guided step-by-step migration prompt: assembles current status, detected legacy patterns, and concrete instructions.
 
+## Claude Code Skills (slash commands)
+
+Three skills are bundled in `skills/` and made globally available via symlinks in `~/.claude/skills/`:
+
+| Skill | Command | Description |
+|---|---|---|
+| `ckeditor-audit` | `/ckeditor-audit` | Migration dashboard — overview of all plugins (status, issue counts, config refs) |
+| `ckeditor-migrate` | `/ckeditor-migrate <plugin>` | Full migration workflow for one plugin: audit → suggest fixes → apply → validate |
+| `ckeditor-report` | `/ckeditor-report` | Generate and display the full Markdown/JSON audit report |
+
+Skills are **user-invocable** (type the slash command) and also **auto-triggered** when you mention CKEditor migration in conversation. See [SETUP.md — Skills](SETUP.md#7-install-claude-code-skills) for the symlink setup.
+
 ## Quick test
 
 Once installed, open a new conversation in Claude Desktop and try:
