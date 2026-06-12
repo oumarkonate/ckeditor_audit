@@ -87,11 +87,14 @@ def test_validate_migration_dirty(project_root):
 
 def test_export_audit_report_markdown(project_root):
     from ckeditor_audit.tools.export_audit_report import export_audit_report
+    from pathlib import Path
     result = export_audit_report(format="markdown")
     assert result.format == "markdown"
     assert "# CKEditor Migration Audit Report" in result.content
     assert result.plugins_total >= 3
-    assert result.output_path is None
+    # Report is always auto-saved to tmp/ckeditor-audit-report.md
+    assert result.output_path is not None
+    assert Path(result.output_path).exists()
 
 
 def test_export_audit_report_json(project_root):
@@ -100,8 +103,14 @@ def test_export_audit_report_json(project_root):
     result = export_audit_report(format="json")
     data = json.loads(result.content)
     assert "summary" in data
-    assert "plugins" in data
-    assert data["summary"]["total"] >= 3
+    assert "groups" in data
+    assert data["summary"]["progress"]["total"] >= 3
+    assert "not_migrated" in data["groups"]
+    assert "partial" in data["groups"]
+    assert "migrated" in data["groups"]
+    # not_migrated entries have complexity field
+    for entry in data["groups"]["not_migrated"]:
+        assert entry["complexity"] in ("simple", "medium", "complex")
 
 
 def test_export_audit_report_write(project_root, tmp_path):
