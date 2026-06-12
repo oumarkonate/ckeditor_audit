@@ -62,6 +62,17 @@ def test_git_changed_files(project_root):
         assert "git" in str(e).lower()
 
 
+def test_grep_changed_reexport(project_root):
+    """grep_changed is re-exported from searcher after the git_ops extraction;
+    on a non-git fixture it returns gracefully or raises a git RuntimeError."""
+    from ckeditor_audit.lib.searcher import grep_changed
+    try:
+        results, n = grep_changed("Plugin")
+        assert isinstance(results, list)
+    except RuntimeError as e:
+        assert "git" in str(e).lower()
+
+
 def test_grep_code_with_extension_filter(project_root):
     from ckeditor_audit.tools.grep_code import grep_code
     result = grep_code(query="import", extensions=["js"], output="compact")

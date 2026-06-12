@@ -285,7 +285,7 @@ CKEDITOR_AUDIT_EXTRA_GLOBS=assets/ckeditor/ckeditor.js,config/figaro/ckeditor5.y
 
 ## 9. Verify in Claude Desktop
 
-After restarting, open a new conversation. The MCP tools icon should list `ckeditor-audit` with its 32 tools.
+After restarting, open a new conversation. The MCP tools icon should list `ckeditor-audit` with its 33 tools.
 
 **Audit tools:**
 

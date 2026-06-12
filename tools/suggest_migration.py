@@ -7,10 +7,9 @@ the exact line to change, the legacy signature found, and the modern replacement
 
 from pydantic import BaseModel
 
-from ckeditor_audit.lib.scanner import find_pattern_hits, plugin_root
+from ckeditor_audit.lib.constants import TOKENS_PER_PLUGIN_FILE
+from ckeditor_audit.lib.scanner import find_pattern_hits
 from ckeditor_audit.tools.common import TokenSavings
-
-_TOKENS_PER_FILE = 400
 
 
 class MigrationFix(BaseModel):
@@ -44,20 +43,16 @@ def suggest_migration(plugin: str) -> SuggestMigrationReport:
     `plugin` must be the plugin directory name, e.g. "ckeditor5-box".
     """
     hits = find_pattern_hits(plugin)
-    root = plugin_root(plugin)
 
-    # Count files for token savings estimate
-    try:
-        files_count = len(set(h.file for h in hits)) if hits else 0
-    except Exception:
-        files_count = 0
+    # Count distinct files touched, for the token-savings estimate.
+    files_count = len({h.file for h in hits})
 
     fixes = [
         MigrationFix(
             file=h.file,
             line=h.line,
             category=h.pattern.category,
-            legacy=h.pattern.legacy,
+            legacy=h.matched,
             replacement=h.pattern.replacement,
             description=h.pattern.description,
         )
@@ -70,7 +65,7 @@ def suggest_migration(plugin: str) -> SuggestMigrationReport:
         total_fixes=len(fixes),
         token_savings=TokenSavings(
             files_scanned=files_count,
-            estimated_tokens_saved=files_count * _TOKENS_PER_FILE,
+            estimated_tokens_saved=files_count * TOKENS_PER_PLUGIN_FILE,
             note=(
                 f"found {len(fixes)} fix(es) across {files_count} file(s) in '{plugin}'"
             ),
