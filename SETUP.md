@@ -149,7 +149,88 @@ Fully quit and restart Claude Desktop after any change to this file (no hot-relo
 
 Add a `.mcp.json` at the root of your project — same format as above.
 
-## 7. Environment variables reference
+## 7. Install Claude Code Skills
+
+The repository ships three slash commands in `skills/`. They live in the project for versioning and
+are linked into the global Claude Code skills directory so they are available in every session.
+
+### What gets installed
+
+| Skill | Slash command | Description |
+|---|---|---|
+| `skills/ckeditor-audit/` | `/ckeditor-audit` | Migration dashboard for all plugins |
+| `skills/ckeditor-migrate/` | `/ckeditor-migrate <plugin>` | Full migration workflow for one plugin |
+| `skills/ckeditor-report/` | `/ckeditor-report` | Generate the full Markdown/JSON audit report |
+
+### macOS / Linux
+
+```bash
+# Create the global skills directory if it doesn't exist yet
+mkdir -p ~/.claude/skills
+
+# Create one symlink per skill
+ln -s /path/to/mcp/ckeditor_audit/skills/ckeditor-audit   ~/.claude/skills/ckeditor-audit
+ln -s /path/to/mcp/ckeditor_audit/skills/ckeditor-migrate ~/.claude/skills/ckeditor-migrate
+ln -s /path/to/mcp/ckeditor_audit/skills/ckeditor-report  ~/.claude/skills/ckeditor-report
+```
+
+### Windows (PowerShell — run as Administrator)
+
+```powershell
+# Create the global skills directory if it doesn't exist yet
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills"
+
+# Create one symlink per skill
+New-Item -ItemType SymbolicLink `
+  -Path "$env:USERPROFILE\.claude\skills\ckeditor-audit" `
+  -Target "C:\path\to\mcp\ckeditor_audit\skills\ckeditor-audit"
+
+New-Item -ItemType SymbolicLink `
+  -Path "$env:USERPROFILE\.claude\skills\ckeditor-migrate" `
+  -Target "C:\path\to\mcp\ckeditor_audit\skills\ckeditor-migrate"
+
+New-Item -ItemType SymbolicLink `
+  -Path "$env:USERPROFILE\.claude\skills\ckeditor-report" `
+  -Target "C:\path\to\mcp\ckeditor_audit\skills\ckeditor-report"
+```
+
+> **Why symlinks?** The skill files live in the project so they are versioned alongside the server
+> code and updated with `git pull`. The symlinks make them visible to Claude Code globally without
+> duplicating the files.
+
+### Verify
+
+In any Claude Code session (Claude Desktop or CLI), type `/` — the three skills should appear in
+the autocomplete list. Or try directly:
+
+```
+/ckeditor-audit
+```
+
+Claude will call `audit_all` and display the migration dashboard.
+
+### Update after `git pull`
+
+No action needed — the symlinks point to the project files, so pulling updates to `skills/` is
+immediately reflected in the global skills directory.
+
+### Remove the skills
+
+```bash
+# macOS / Linux
+rm ~/.claude/skills/ckeditor-audit
+rm ~/.claude/skills/ckeditor-migrate
+rm ~/.claude/skills/ckeditor-report
+```
+
+```powershell
+# Windows
+Remove-Item "$env:USERPROFILE\.claude\skills\ckeditor-audit"
+Remove-Item "$env:USERPROFILE\.claude\skills\ckeditor-migrate"
+Remove-Item "$env:USERPROFILE\.claude\skills\ckeditor-report"
+```
+
+## 8. Environment variables reference
 
 ### CKEditor audit variables
 
@@ -172,12 +253,15 @@ CKEDITOR_AUDIT_TARGET_LABEL=v47
 
 The patterns that are actually detected come from `lib/patterns.py`. The labels tell Claude *how to name* the versions; the patterns table tells it *what to look for*.
 
-### Generic file search variables
+### Search engine variables
 
 | Variable | Where to set | Default | Description |
 |---|---|---|---|
-| `CKEDITOR_AUDIT_EXCLUDE_DIRS` | `.env` | `node_modules,.git,dist,build,vendor` | Comma-separated directory names to skip in `find_files`, `grep_code`, `grep_with_context`, `count_matches` |
-| `CKEDITOR_AUDIT_MAX_RESULTS` | `.env` | `50` | Maximum number of matches returned by `grep`/`find` tools |
+| `CKEDITOR_AUDIT_EXCLUDE_DIRS` | `.env` | `node_modules,.git,dist,build,vendor,coverage,...` | Comma-separated directory names to skip during file search |
+| `CKEDITOR_AUDIT_MAX_RESULTS` | `.env` | `50` | Maximum number of matches returned by `grep`/`find` tools (1–500) |
+| `CKEDITOR_AUDIT_EXTENSIONS` | `.env` | `js,ts,jsx,tsx,yaml,yml,php,scss,css` | File extensions searched by `grep_code`, `find_class`, `ast_search`, etc. |
+| `CKEDITOR_AUDIT_BACKEND` | `.env` | `auto` | Search backend: `auto` (use ripgrep if found), `rg`, or `python` |
+| `CKEDITOR_AUDIT_RESPECT_GITIGNORE` | `.env` | `true` | Whether to honour `.gitignore` when searching |
 
 ### Claude Desktop variable
 
@@ -187,7 +271,7 @@ The patterns that are actually detected come from `lib/patterns.py`. The labels 
 
 ### CKEDITOR_AUDIT_EXTRA_GLOBS — extending the usage search
 
-By default, `find_usages` and `audit_plugin` only scan the files matched by `CKEDITOR_AUDIT_CONFIGS_GLOB`. Use `CKEDITOR_AUDIT_EXTRA_GLOBS` to also search entry files, YAML configs, PHP constants, or JS plugin registries.
+By default, `find_plugin_usages` and `audit_plugin` only scan the files matched by `CKEDITOR_AUDIT_CONFIGS_GLOB`. Use `CKEDITOR_AUDIT_EXTRA_GLOBS` to also search entry files, YAML configs, PHP constants, or JS plugin registries.
 
 Each file reference is reported with two flags:
 - `active: true` — the plugin is referenced in an uncommented line (currently in use)
@@ -199,9 +283,9 @@ Example `.env` entry for a project with multiple registry files:
 CKEDITOR_AUDIT_EXTRA_GLOBS=assets/ckeditor/ckeditor.js,config/figaro/ckeditor5.yaml,src/Domain/Form/Type/CKEditor5Type.php,assets/config/ckeditor/plugins.js
 ```
 
-## 8. Verify in Claude Desktop
+## 9. Verify in Claude Desktop
 
-After restarting, open a new conversation. The MCP tools icon should list `ckeditor_audit` with its 11 tools.
+After restarting, open a new conversation. The MCP tools icon should list `ckeditor-audit` with its 32 tools.
 
 **Audit tools:**
 
@@ -209,29 +293,37 @@ After restarting, open a new conversation. The MCP tools icon should list `ckedi
 
 > Use `audit_plugin` on "ckeditor5-box"
 
-> Use `find_usages` on "ckeditor5-box"
+> Use `find_plugin_usages` on "ckeditor5-box"
 
 > Use `list_patterns` to show me all known legacy patterns
 
-**Generic search tools:**
+**Migration assistance:**
+
+> Use `suggest_migration` on "ckeditor5-image" to get actionable fixes
+
+> Use `validate_migration` on "ckeditor5-box" to confirm it is clean
+
+> Use `export_audit_report` with format="markdown" to get the full report
+
+**Search tools:**
 
 > Use `find_files` to find all files whose name contains "plugin" with extension "js"
 
-> Use `count_matches` to count how many times "ClassicEditor" appears in js files
-
 > Use `grep_code` to search for `from '@ckeditor` in js and ts files
 
-> Use `grep_with_context` on `import.*ckeditor5` with 5 context lines in the assets directory
+> Use `find_class` to find the Plugin class
 
-> Use `read_file` to read "assets/ckeditor/ckeditor5-box/src/box.js"
+> Use `ast_search` with pattern "class $NAME extends Plugin" and lang "javascript"
 
-**Git-aware tools:**
+**Skills (slash commands):**
 
-> Use `git_changed_files` to list all unstaged changes
+> /ckeditor-audit
 
-> Use `grep_changed` to search for "@ckeditor" only in modified files
+> /ckeditor-migrate ckeditor5-image
 
-## 9. Troubleshooting
+> /ckeditor-report
+
+## 10. Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -239,9 +331,10 @@ After restarting, open a new conversation. The MCP tools icon should list `ckedi
 | `RuntimeError: CKEDITOR_AUDIT_PROJECT_ROOT is not set` | Missing env var | Set it in `.env` or in the `env` block of the config |
 | `RuntimeError: does not point to a directory` | Path doesn't exist | Check the path — on Windows use `\\` or `/` as separator |
 | Server not appearing after config change | Claude not restarted | Fully quit and reopen Claude Desktop |
+| Skill not appearing in `/` autocomplete | Symlink missing or wrong target | Verify with `ls -la ~/.claude/skills/ckeditor-*` (Linux/macOS) or `dir $env:USERPROFILE\.claude\skills` (Windows) |
 | **Logs — Linux/macOS** | | `~/.config/Claude/logs/mcp-server-ckeditor-audit.log` |
 | **Logs — Windows** | | `%APPDATA%\Claude\logs\mcp-server-ckeditor-audit.log` |
 
-## 10. Adding new patterns
+## 11. Adding new patterns
 
 When a migration reveals a new legacy → latest pattern, add it to `lib/patterns.py` and restart Claude Desktop.
