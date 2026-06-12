@@ -5,7 +5,15 @@
       "args": ["-m", "ckeditor_audit"],
       "env": {
         "PYTHONPATH": "C:\\path\\to\\mcp",
-        "CKEDITOR_AUDIT_PROJECT_ROOT": "C:\\path\\to\\your\\project"
+        "CKEDITOR_AUDIT_PROJECT_ROOT": "C:\\path\\to\\your\\project",
+
+        "CKEDITOR_AUDIT_PLUGINS_GLOB": "assets/ckeditor/ckeditor5-*",
+        "CKEDITOR_AUDIT_CONFIGS_GLOB": "assets/config/ckeditor/*_config.js",
+
+        "CKEDITOR_AUDIT_EXTENSIONS": "js,ts,jsx,tsx,yaml,yml,php,scss",
+        "CKEDITOR_AUDIT_BACKEND": "auto",
+        "CKEDITOR_AUDIT_MAX_RESULTS": "50",
+        "CKEDITOR_AUDIT_RESPECT_GITIGNORE": "true"
       }
     }
   }

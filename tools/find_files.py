@@ -1,26 +1,18 @@
-"""
-Tool: find_files
-
-Finds project files whose name contains a given pattern.
-No content scanning — pure name matching.
-"""
-
 from pydantic import BaseModel
 
-from ckeditor_audit.config import settings
-from ckeditor_audit.lib.searcher import TOKENS_PER_FILE_FIND, find_files_by_name
+from ckeditor_audit.lib.searcher import find_files as _find_files
 from ckeditor_audit.tools.common import TokenSavings
 
+_TOKENS_PER_FILE = 80
 
-class FileInfo(BaseModel):
-    """A file that matched the name search."""
 
-    path: str   # relative to project root
-    name: str   # filename only
+class FileMatch(BaseModel):
+    path: str
+    name: str
 
 
 class FindFilesReport(BaseModel):
-    results: list[FileInfo]
+    results: list[FileMatch]
     token_savings: TokenSavings
 
 
@@ -29,30 +21,28 @@ def find_files(
     directory: str | None = None,
     extension: str | None = None,
 ) -> FindFilesReport:
+    """Find files whose name contains the given pattern.
+
+    Args:
+        pattern: Substring to search for in file names (case-insensitive).
+        directory: Optional subdirectory to restrict the search (relative to project root).
+        extension: Optional file extension filter, e.g. "php" or "ts".
+
+    Returns:
+        results: list of matching files with their relative path and name.
+        token_savings: estimated tokens saved vs. Claude running a bash find + filtering.
     """
-    Find project files whose name contains `pattern` (case-insensitive).
-
-    `directory` restricts the search to a subdirectory relative to the project root.
-    `extension` filters by file extension, e.g. "js" or "yaml" (no leading dot needed).
-
-    Returns up to CKEDITOR_AUDIT_MAX_RESULTS matches.
-    """
-    root = settings.project_root
-    paths, files_checked = find_files_by_name(pattern, directory, extension)
-
-    results = [
-        FileInfo(path=str(p.relative_to(root)), name=p.name)
-        for p in paths
-    ]
-
+    raw, files_checked = _find_files(pattern, directory, extension)
+    results = [FileMatch(**r) for r in raw]
+    estimated_saved = files_checked * _TOKENS_PER_FILE
     return FindFilesReport(
         results=results,
         token_savings=TokenSavings(
             files_scanned=files_checked,
-            estimated_tokens_saved=files_checked * TOKENS_PER_FILE_FIND,
+            estimated_tokens_saved=estimated_saved,
             note=(
                 f"checked {files_checked} file(s), "
-                f"found {len(results)} match(es) for name pattern '{pattern}'"
+                f"returned {len(results)} match(es) for '{pattern}'"
             ),
         ),
     )

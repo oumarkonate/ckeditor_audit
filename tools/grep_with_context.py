@@ -1,28 +1,27 @@
-"""
-Tool: grep_with_context
-
-Same as grep_code but each match includes surrounding lines for context.
-Useful for verifying whether a legacy pattern hit is genuine before acting.
-"""
+from __future__ import annotations
 
 from pydantic import BaseModel
 
-from ckeditor_audit.lib.searcher import TOKENS_PER_FILE_SEARCH, grep_files_with_context
+from ckeditor_audit.lib.searcher import grep_with_context as _grep_with_context
+from ckeditor_audit.lib.pagination import paginate
+from ckeditor_audit.config import settings
 from ckeditor_audit.tools.common import TokenSavings
+
+_TOKENS_PER_FILE = 1200
 
 
 class ContextMatch(BaseModel):
-    """A match with its surrounding lines."""
-
-    path: str          # relative to project root
-    line: int          # 1-based line number of the match
-    snippet: str       # matched line content, truncated to 120 chars
-    before: list[str]  # lines immediately before the match
-    after: list[str]   # lines immediately after the match
+    path: str
+    line: int
+    snippet: str
+    before: list[str]
+    after: list[str]
 
 
 class GrepContextReport(BaseModel):
     matches: list[ContextMatch]
+    has_more: bool = False
+    next_cursor: str | None = None
     token_savings: TokenSavings
 
 
@@ -32,41 +31,70 @@ def grep_with_context(
     directory: str | None = None,
     extensions: list[str] | None = None,
     max_results: int | None = None,
+    case_sensitive: bool | str = "smart",
+    whole_word: bool = False,
+    fixed_string: bool = False,
+    path_glob: str | None = None,
+    respect_gitignore: bool | None = None,
+    multiline: bool = False,
+    cursor: str | None = None,
 ) -> GrepContextReport:
-    """
-    Search project files for `query` and return surrounding lines for context.
+    """Search for a regex pattern and return surrounding lines for each match.
 
-    Works identically to grep_code but each match includes up to `context_lines`
-    lines before and after the matching line (clamped to [0, 10]).
+    Use this when you need to understand the code context around a match — e.g. to see
+    the surrounding function body or imports. For just locating matches, grep_code is cheaper.
 
-    Use this tool when a match from grep_code needs verification — for example,
-    to check whether a legacy pattern is inside a comment, a string literal,
-    or a genuine import statement.
+    Args:
+        query: Regex pattern (or plain text) to search for.
+        context_lines: Lines before/after each match (default 3, max 10).
+        directory: Optional subdirectory (relative to project root).
+        extensions: Optional file extensions, e.g. ["php", "yaml"].
+        max_results: Max results per page (defaults to CKEDITOR_AUDIT_MAX_RESULTS).
+        case_sensitive: True, False, or "smart".
+        whole_word: Match whole words only.
+        fixed_string: Treat query as literal string.
+        path_glob: Glob pattern like "src/**/*.php".
+        respect_gitignore: Skip .gitignore'd files.
+        multiline: Enable multiline matching (rg -U). Use only with anchored patterns.
+        cursor: Pagination cursor from previous call.
+
+    Returns:
+        matches: Each match with before/after context lines.
+        has_more: True if more results exist.
+        next_cursor: Pass to next call to paginate.
+        token_savings: Estimated tokens saved.
     """
-    raw, files_searched = grep_files_with_context(
-        query, context_lines, directory, extensions, max_results
+    limit = max_results or settings.max_results
+    rg_ignore = respect_gitignore if respect_gitignore is not None else settings.respect_gitignore
+
+    raw, files_searched = _grep_with_context(
+        query=query,
+        context_lines=context_lines,
+        directory=directory,
+        extensions=extensions,
+        max_results=limit * 3,
+        case_sensitive=case_sensitive,
+        whole_word=whole_word,
+        fixed_string=fixed_string,
+        path_glob=path_glob,
+        respect_gitignore=rg_ignore,
+        multiline=multiline,
     )
 
-    matches = [
-        ContextMatch(
-            path=m.path,
-            line=m.line,
-            snippet=m.snippet,
-            before=m.before,
-            after=m.after,
-        )
-        for m in raw
-    ]
+    page, next_cursor, has_more = paginate(raw, limit, cursor, query)
+    matches = [ContextMatch(**r) for r in page]
 
-    ctx = max(0, min(context_lines, 10))
     return GrepContextReport(
         matches=matches,
+        has_more=has_more,
+        next_cursor=next_cursor,
         token_savings=TokenSavings(
             files_scanned=files_searched,
-            estimated_tokens_saved=files_searched * TOKENS_PER_FILE_SEARCH,
+            estimated_tokens_saved=files_searched * _TOKENS_PER_FILE,
             note=(
-                f"searched {files_searched} file(s), "
-                f"found {len(matches)} match(es) with ±{ctx} context lines"
+                f"searched {files_searched} file(s), {len(matches)} match(es) "
+                f"with {context_lines} context line(s)"
+                + (" [more available]" if has_more else "")
             ),
         ),
     )

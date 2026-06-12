@@ -6,5 +6,15 @@ mcp @ git+https://github.com/modelcontextprotocol/python-sdk.git@main
 pydantic>=2.0
 
 # Loads project-specific env vars from a .env file at server startup.
-# Already installed as a transitive dependency of mcp, declared here for clarity.
 python-dotenv>=1.0
+
+# Fast fuzzy matching for symbol and file name lookups
+# Gracefully degraded if absent (fuzzy search returns empty list)
+rapidfuzz>=3.0
+
+# AST structural search for PHP, JS, TS, TSX via tree-sitter
+# Gracefully degraded if absent (falls back to regex patterns)
+ast-grep-py>=0.38
+
+# pathspec — used by ripgrep backend for .gitignore integration
+pathspec>=0.12
