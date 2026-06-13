@@ -85,6 +85,60 @@ def test_validate_migration_dirty(project_root):
     assert result.remaining_hits[0].line > 0
 
 
+def test_invariant_not_migrated_implies_fixes(project_root):
+    """Core invariant: any plugin flagged not_migrated/partial yields >=1 hit.
+
+    This guards the historical bug where a plugin could be detected as needing
+    migration yet suggest_migration returned an empty list (deep import absent
+    from the hardcoded catalog).
+    """
+    from ckeditor_audit.lib.scanner import (
+        detect_status,
+        find_pattern_hits,
+        list_plugins,
+    )
+    for name in list_plugins():
+        status = detect_status(name)
+        if status in ("not_migrated", "partial"):
+            assert len(find_pattern_hits(name)) > 0, f"{name} ({status}) yielded no hits"
+
+
+def test_partial_plugin_generic_fallback(project_root):
+    """The partial 'toolbar' plugin uses a deep import absent from the catalog;
+    the generic fallback rule must still surface an actionable fix that reports
+    the actual import verbatim (not a regex/placeholder)."""
+    from ckeditor_audit.tools.suggest_migration import suggest_migration
+    result = suggest_migration("ckeditor5-toolbar")
+    assert result.total_fixes > 0
+    assert any(
+        "@ckeditor/ckeditor5-ui/src/toolbar/toolbar" in fix.legacy
+        for fix in result.fixes
+    )
+
+
+def test_regex_pattern_matches_whitespace(project_root):
+    """is_regex schema pattern (allowIn:\\s*'root') matches the spaced variant."""
+    from ckeditor_audit.lib.scanner import find_pattern_hits
+    hits = find_pattern_hits("ckeditor5-image")
+    assert any(h.pattern.category == "schema" for h in hits)
+
+
+def test_no_imports_status(project_root):
+    """A plugin with no CKEditor imports is reported as 'no_imports', not
+    'not_migrated', and has no issues."""
+    from ckeditor_audit.tools.audit_plugin import audit_plugin
+    result = audit_plugin("ckeditor5-empty")
+    assert result.status == "no_imports"
+    assert result.issues == []
+
+
+def test_patterns_loaded_from_json(project_root):
+    """The catalog is loaded from the JSON data file and includes regex entries."""
+    from ckeditor_audit.lib.patterns import PATTERNS
+    assert len(PATTERNS) >= 14
+    assert any(p.is_regex for p in PATTERNS)
+
+
 def test_export_audit_report_markdown(project_root):
     from ckeditor_audit.tools.export_audit_report import export_audit_report
     from pathlib import Path

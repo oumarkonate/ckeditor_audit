@@ -14,13 +14,14 @@ from ckeditor_audit.lib.scanner import (
     detect_status,
     find_pattern_hits,
     plugin_files,
+    plugin_package_info,
     plugin_root,
 )
+from ckeditor_audit.lib.constants import (
+    TOKENS_PER_CONFIG_FILE,
+    TOKENS_PER_SOURCE_FILE,
+)
 from ckeditor_audit.tools.common import TokenSavings
-
-# Estimated tokens Claude would spend reading each file type directly.
-_TOKENS_PER_SOURCE_FILE = 500
-_TOKENS_PER_CONFIG_FILE = 300
 
 
 class Issue(BaseModel):
@@ -42,6 +43,15 @@ class ConfigUsage(BaseModel):
     commented: bool # True = at least one commented-out reference
 
 
+class PackageInfo(BaseModel):
+    """CKEditor-relevant fields read from the plugin's package.json (if any)."""
+
+    name: str | None = None
+    version: str | None = None
+    # Declared '@ckeditor/*' and 'ckeditor5' dependency version specs.
+    ckeditor_dependencies: dict[str, str] = {}
+
+
 class PluginAudit(BaseModel):
     """Full migration report for a single plugin."""
 
@@ -52,6 +62,7 @@ class PluginAudit(BaseModel):
     issues: list[Issue]
     used_in_configs: list[ConfigUsage]
     files: list[str]     # all .js files found in the plugin
+    package: PackageInfo | None = None  # package.json metadata, if present
     token_savings: TokenSavings
 
 
@@ -74,7 +85,7 @@ def audit_plugin(name: str) -> PluginAudit:
         Issue(
             file=hit.file,
             line=hit.line,
-            legacy=hit.pattern.legacy,
+            legacy=hit.matched,
             replacement=hit.pattern.replacement,
             description=hit.pattern.description,
             category=hit.pattern.category,
@@ -82,9 +93,12 @@ def audit_plugin(name: str) -> PluginAudit:
         for hit in hits
     ]
 
+    pkg_info = plugin_package_info(name)
+    package = PackageInfo(**pkg_info) if pkg_info else None
+
     n_source = len(source_files)
     files_scanned = n_source + n_config_files
-    estimated_saved = n_source * _TOKENS_PER_SOURCE_FILE + n_config_files * _TOKENS_PER_CONFIG_FILE
+    estimated_saved = n_source * TOKENS_PER_SOURCE_FILE + n_config_files * TOKENS_PER_CONFIG_FILE
 
     return PluginAudit(
         plugin=name,
@@ -97,6 +111,7 @@ def audit_plugin(name: str) -> PluginAudit:
             for u in configs
         ],
         files=rel_files,
+        package=package,
         token_savings=TokenSavings(
             files_scanned=files_scanned,
             estimated_tokens_saved=estimated_saved,

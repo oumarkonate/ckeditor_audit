@@ -18,16 +18,23 @@ This server pre-indexes all of that. One `audit_plugin` call returns a ~200-toke
 
 The server also improves accuracy: it catches usages in commented-out code and searches across all relevant file types (JS entry files, YAML configs, PHP constants, plugin registries) — coverage that ad-hoc `grep` calls during a session often miss.
 
-## Tools (32 total)
+## Tools (33 total)
 
 ### CKEditor audit tools (domain-specific)
 
 | Tool | Description |
 |---|---|
 | `list_patterns` | Returns the known legacy → latest pattern mapping table |
-| `audit_plugin` | Detailed migration report for a single plugin (issues, config refs, file list) |
+| `audit_plugin` | Detailed migration report for a single plugin (issues, config refs, file list, `package.json` info) |
 | `audit_all` | Summary migration status for all detected plugins |
 | `find_plugin_usages` | Lists config files that reference a given plugin (active vs commented) |
+| `audit_dependencies` | Project-wide view of `@ckeditor/*` (legacy) and `ckeditor5` (modern) deps declared in every `package.json` |
+
+> **Maintaining the migration catalog:** the legacy → modern pattern table lives in
+> [`lib/data/patterns.json`](lib/data/patterns.json) — add an entry (set `"is_regex": true` for a
+> regular expression) without touching code. Any legacy `@ckeditor/ckeditor5-*` deep import not covered
+> by a specific entry is still caught by a generic fallback rule, so `suggest_migration` never returns
+> empty for a plugin that needs migrating.
 
 ### Migration assistance tools
 

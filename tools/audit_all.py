@@ -9,9 +9,8 @@ from pydantic import BaseModel
 
 from ckeditor_audit.config import settings
 from ckeditor_audit.lib.scanner import detect_status, list_plugins, plugin_files
+from ckeditor_audit.lib.constants import TOKENS_PER_SOURCE_FILE
 from ckeditor_audit.tools.common import TokenSavings
-
-_TOKENS_PER_SOURCE_FILE = 500
 
 
 class PluginSummary(BaseModel):
@@ -28,6 +27,7 @@ class AuditAllReport(BaseModel):
     migrated: int
     partial: int
     not_migrated: int
+    no_imports: int
     legacy_label: str
     target_label: str
     plugins: list[PluginSummary]
@@ -53,14 +53,16 @@ def audit_all() -> AuditAllReport:
     migrated_count = sum(1 for s in summaries if s.status == "migrated")
     partial_count = sum(1 for s in summaries if s.status == "partial")
     not_migrated_count = sum(1 for s in summaries if s.status == "not_migrated")
+    no_imports_count = sum(1 for s in summaries if s.status == "no_imports")
 
-    estimated_saved = total_source_files * _TOKENS_PER_SOURCE_FILE
+    estimated_saved = total_source_files * TOKENS_PER_SOURCE_FILE
 
     return AuditAllReport(
         total=len(summaries),
         migrated=migrated_count,
         partial=partial_count,
         not_migrated=not_migrated_count,
+        no_imports=no_imports_count,
         legacy_label=settings.legacy_label,
         target_label=settings.target_label,
         plugins=summaries,

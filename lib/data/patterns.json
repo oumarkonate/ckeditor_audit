@@ -1,0 +1,106 @@
+[
+  {
+    "legacy": "from '@ckeditor/ckeditor5-core/src/plugin'",
+    "replacement": "import { Plugin } from 'ckeditor5'",
+    "description": "Plugin base class is now a named export from the 'ckeditor5' package",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-core/src/command'",
+    "replacement": "import { Command } from 'ckeditor5'",
+    "description": "Command base class is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-core/src/editor/",
+    "replacement": "import { ... } from 'ckeditor5'",
+    "description": "Editor classes are now named exports from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-widget/src/widget'",
+    "replacement": "import { Widget } from 'ckeditor5'",
+    "description": "Widget plugin is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-widget/src/utils'",
+    "replacement": "import { toWidget, toWidgetEditable, ... } from 'ckeditor5'",
+    "description": "Widget utilities are now named exports from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-engine/src/model/text'",
+    "replacement": "# Text is internal — use writer.createText() instead",
+    "description": "Direct import of Text is replaced by writer.createText()",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-engine/src/model/element'",
+    "replacement": "# ModelElement is internal — use writer.createElement() instead",
+    "description": "Direct import of ModelElement is replaced by writer factory methods",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-engine/src/view/placeholder'",
+    "replacement": "import { enablePlaceholder } from 'ckeditor5'",
+    "description": "enablePlaceholder is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-ui/src/notification/notification'",
+    "replacement": "import { Notification } from 'ckeditor5'",
+    "description": "Notification plugin is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-ui/src/button/buttonview'",
+    "replacement": "import { ButtonView } from 'ckeditor5'",
+    "description": "ButtonView is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-ui/src/viewcollection'",
+    "replacement": "import { ViewCollection } from 'ckeditor5'",
+    "description": "ViewCollection is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-clipboard/src/clipboard'",
+    "replacement": "import { Clipboard } from 'ckeditor5'",
+    "description": "Clipboard plugin is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-utils/src/first'",
+    "replacement": "import { first } from 'ckeditor5'",
+    "description": "first() utility is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "from '@ckeditor/ckeditor5-utils/src/ckeditorerror'",
+    "replacement": "import { CKEditorError } from 'ckeditor5'",
+    "description": "CKEditorError is now a named export from 'ckeditor5'",
+    "category": "import"
+  },
+  {
+    "legacy": "new TextProxy(",
+    "replacement": "writer.createText(",
+    "description": "TextProxy constructor is replaced by writer.createText()",
+    "category": "api"
+  },
+  {
+    "legacy": "allowIn:\\s*'root'",
+    "replacement": "allowWhere: '$block'",
+    "description": "schema.register() option allowIn:'root' becomes allowWhere:'$block'",
+    "category": "schema",
+    "is_regex": true
+  },
+  {
+    "legacy": "allowIn:\\s*'\\$root'",
+    "replacement": "allowWhere: '$block'",
+    "description": "schema.register() option allowIn:'$root' becomes allowWhere:'$block'",
+    "category": "schema",
+    "is_regex": true
+  }
+]
