@@ -1,5 +1,12 @@
 {
   "_comment": "Project-specific plugin overrides for the ckeditor-audit MCP. Copy this file to the ROOT of the project you audit as `.ckeditor-audit.json` and version it THERE (not in the MCP). Each entry declares a decision that cannot be deduced from the code. All fields except `status` are optional.",
+  "_comment_config_files": "Extra files (relative to the project root) cross-checked to tell whether each plugin is active or commented in production: editor entrypoint, YAML profiles, PHP/JS constants. Plugins are matched by folder name, PascalCase, SCREAMING_SNAKE and lowercase suffix, on word boundaries.",
+  "config_files": [
+    "assets/ckeditor/ckeditor.js",
+    "config/editor/ckeditor5.yaml",
+    "src/Form/CKEditorType.php",
+    "assets/config/ckeditor/plugins.js"
+  ],
   "plugins": {
     "ckeditor5-legacy-box": {
       "status": "to_delete",

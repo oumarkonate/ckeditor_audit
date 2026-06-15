@@ -67,6 +67,41 @@ in the audited project, **not** in the MCP — see [`.ckeditor-audit.json.exampl
 
 A malformed or absent file is ignored silently (the audit never crashes).
 
+#### `config_files` — multi-file active/commented detection
+
+A plugin's real state is often spread across heterogeneous files that are neither in
+`CKEDITOR_AUDIT_CONFIGS_GLOB` nor the single entrypoint: the editor entrypoint
+(`ckeditor.js`), YAML profiles, PHP constants, JS constant maps. List them under a
+`config_files` key (paths relative to the project root) and the audit cross-checks them all:
+
+```json
+{
+  "config_files": [
+    "assets/ckeditor/ckeditor.js",
+    "config/editor/ckeditor5.yaml",
+    "src/Form/CKEditorType.php",
+    "assets/config/ckeditor/plugins.js"
+  ],
+  "plugins": { }
+}
+```
+
+Because the same plugin appears under different spellings, each plugin is matched by **four
+terms on word boundaries** (so `box` never matches `toolbox`):
+
+| Term | Example (`ckeditor5-media-embed`) | Matches |
+|---|---|---|
+| folder name | `ckeditor5-media-embed` | JS import paths |
+| PascalCase | `MediaEmbed` | `builtinPlugins` entries |
+| SCREAMING_SNAKE | `MEDIA_EMBED` | PHP / YAML constants |
+| lowercase suffix | `media-embed` | JS string constants |
+
+> **Blind spot:** a single compound word with no hyphen (`ckeditor5-wordcount`) yields
+> `WORDCOUNT`, not `WORD_COUNT` — so a `PLUGIN_WORD_COUNT` constant for such a plugin is not
+> detected. Hyphenated names are fully covered.
+
+The MCP caches `.ckeditor-audit.json`; **restart it** after editing the file.
+
 ### Entrypoint cross-check — `CKEDITOR_AUDIT_ENTRYPOINT`
 
 Set `CKEDITOR_AUDIT_ENTRYPOINT` (relative to the project root, e.g.

@@ -34,12 +34,12 @@ def apply_overrides(monkeypatch, project_root):
             base_settings, overrides_file=ovr_file, entrypoint=entrypoint
         )
         monkeypatch.setattr(scanner, "settings", new)
-        scanner.load_overrides.cache_clear()
+        scanner.invalidate_caches()
         return new
 
     yield _apply
 
-    scanner.load_overrides.cache_clear()
+    scanner.invalidate_caches()
     for f in created:
         f.unlink(missing_ok=True)
 
@@ -175,3 +175,84 @@ def test_entrypoint_absent_no_marking(apply_overrides):
     from ckeditor_audit.lib import scanner
     apply_overrides()  # no entrypoint configured
     assert scanner.parse_entrypoint() == {"active": set(), "commented": set()}
+
+
+def test_entrypoint_pascalcase_commented(apply_overrides, tmp_path):
+    """builtinPlugins reference plugins by PascalCase, not the folder name."""
+    from ckeditor_audit.lib.scanner import parse_entrypoint
+    ep = tmp_path / "ckeditor.js"
+    ep.write_text(
+        "builtinPlugins = [\n  // Box,\n  Image,\n];\n", encoding="utf-8"
+    )
+    apply_overrides(entrypoint=ep)
+    cross = parse_entrypoint()
+    assert "ckeditor5-box" in cross["commented"]
+    assert "ckeditor5-image" in cross["active"]
+
+
+# ── Multi-term matching (pure helpers) ─────────────────────────────────────
+
+def test_search_terms_generation():
+    from ckeditor_audit.lib.scanner import _search_terms
+    assert _search_terms("ckeditor5-wordcount") == [
+        "ckeditor5-wordcount", "Wordcount", "WORDCOUNT", "wordcount"]
+    assert _search_terms("ckeditor5-media-embed") == [
+        "ckeditor5-media-embed", "MediaEmbed",
+        "MEDIA_EMBED", "media-embed"]
+
+
+def test_word_boundary_matching():
+    from ckeditor_audit.lib.scanner import _plugin_in_line
+    # no false positive on substrings
+    assert _plugin_in_line("ckeditor5-box", "import x from './toolbox';") is False
+    assert _plugin_in_line("ckeditor5-box", "const x = ckeditor5Box;") is False
+    # real references match
+    assert _plugin_in_line("ckeditor5-box", "import B from 'ckeditor5-box';") is True
+    assert _plugin_in_line("ckeditor5-box", "  // Box,") is True
+    # SCREAMING_SNAKE from a hyphenated name matches a PHP/YAML constant
+    assert _plugin_in_line(
+        "ckeditor5-media-embed", "// self::PLUGIN_MEDIA_EMBED,") is True
+
+
+# ── config_files scanning ──────────────────────────────────────────────────
+
+def test_config_files_active_and_commented(apply_overrides, project_root):
+    import shutil
+    from ckeditor_audit.lib.scanner import configs_using
+    d = project_root / "cfgtest"
+    d.mkdir(exist_ok=True)
+    try:
+        (d / "plugins.js").write_text(
+            "export const BOX_PLUGIN = 'Box';\n", encoding="utf-8")
+        (d / "Type.php").write_text(
+            "<?php\n// self::PLUGIN_BOX,\n", encoding="utf-8")
+        apply_overrides(overrides={"config_files": [
+            "cfgtest/plugins.js", "cfgtest/Type.php"]})
+        usages, _ = configs_using("ckeditor5-box")
+        byfile = {u.file: u for u in usages}
+        assert byfile["cfgtest/plugins.js"].active is True
+        assert byfile["cfgtest/Type.php"].commented is True
+        assert byfile["cfgtest/Type.php"].active is False
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_config_files_absent_or_malformed(apply_overrides):
+    from ckeditor_audit.lib.scanner import load_config_files
+    apply_overrides(overrides=None)
+    assert load_config_files() == []
+    apply_overrides(overrides="{ broken json ")
+    assert load_config_files() == []
+    apply_overrides(overrides={"plugins": {}})  # no config_files key
+    assert load_config_files() == []
+
+
+def test_config_files_nonexistent_path_skipped(apply_overrides):
+    """A declared config file that does not exist is skipped, never crashes."""
+    from ckeditor_audit.lib.scanner import configs_using, load_config_files
+    apply_overrides(overrides={"config_files": ["does/not/exist.js"]})
+    # the path is loaded but filtered out by the is_file() guard in configs_using
+    assert len(load_config_files()) == 1
+    usages, _ = configs_using("ckeditor5-image")  # must not raise
+    # existing glob results are unaffected (image still commented there)
+    assert any(u.commented for u in usages)
