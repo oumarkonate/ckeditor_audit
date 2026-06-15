@@ -7,6 +7,7 @@ by config.Settings. They are called by the tool functions, not directly.
 
 import json
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -19,9 +20,99 @@ from ckeditor_audit.lib.patterns import PATTERNS, Pattern
 # Type aliases
 # ---------------------------------------------------------------------------
 
-# "no_imports" = a plugin directory with no CKEditor imports at all (nothing to
-# migrate); kept distinct from "not_migrated" (legacy imports present).
-MigrationStatus = Literal["migrated", "not_migrated", "partial", "no_imports"]
+# Auto-detected statuses (deduced from JS imports):
+#   "migrated" / "not_migrated" / "partial" — see detect_status().
+#   "no_imports" = a plugin directory with no CKEditor imports at all (nothing to
+#   migrate); kept distinct from "not_migrated" (legacy imports present).
+# Override statuses (declared in .ckeditor-audit.json, project-specific decisions
+# that cannot be deduced from code):
+#   "to_delete"                 — plugin to remove (native duplicate, dead code).
+#   "requires_reimplementation" — not migrated, needs functional rework.
+#   "aliased_to"                — renamed; old dir lingers, treated as "to delete".
+#   "skip"                      — excluded from the report entirely.
+MigrationStatus = Literal[
+    "migrated", "not_migrated", "partial", "no_imports",
+    "to_delete", "requires_reimplementation", "aliased_to", "skip",
+]
+
+# Override statuses that supersede the auto-detected migration status.
+OVERRIDE_STATUSES = frozenset(
+    {"to_delete", "requires_reimplementation", "aliased_to", "skip"}
+)
+
+
+@dataclass
+class PluginOverride:
+    """A project-specific override declared in .ckeditor-audit.json."""
+
+    status: str  # to_delete | requires_reimplementation | aliased_to | skip
+    reason: str = ""
+    aliased_to: str = ""
+    functional_replacement: str = ""
+
+
+@lru_cache(maxsize=1)
+def load_overrides() -> dict[str, "PluginOverride"]:
+    """
+    Load the optional .ckeditor-audit.json overrides file (settings.overrides_file).
+
+    Returns a mapping {plugin_name: PluginOverride}. Returns {} silently when the
+    file is absent, unreadable, or malformed — overrides must never crash an audit.
+    Cached; call load_overrides.cache_clear() if the file changes at runtime.
+    """
+    f = settings.overrides_file
+    if f is None or not f.is_file():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    result: dict[str, PluginOverride] = {}
+    for name, meta in (data.get("plugins") or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        result[name] = PluginOverride(
+            status=meta.get("status", ""),
+            reason=meta.get("reason", ""),
+            aliased_to=meta.get("aliased_to", ""),
+            functional_replacement=meta.get("functional_replacement", ""),
+        )
+    return result
+
+
+@lru_cache(maxsize=1)
+def load_config_files() -> list[Path]:
+    """
+    Load the optional "config_files" list from .ckeditor-audit.json — extra files
+    (entrypoint JS, YAML profiles, PHP constants, JS constant maps) whose plugin
+    references should be cross-checked in addition to CKEDITOR_AUDIT_CONFIGS_GLOB.
+
+    Returns absolute paths under project_root. Returns [] silently when the file is
+    absent, malformed, or has no "config_files" key. Cached; cleared by
+    invalidate_caches().
+    """
+    f = settings.overrides_file
+    if f is None or not f.is_file():
+        return []
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    return [
+        settings.project_root / p
+        for p in (data.get("config_files") or [])
+        if isinstance(p, str)
+    ]
+
+
+def invalidate_caches() -> None:
+    """Clear all .ckeditor-audit.json-backed caches (call after the file changes)."""
+    load_overrides.cache_clear()
+    load_config_files.cache_clear()
 
 
 class PatternHit(object):
@@ -88,7 +179,14 @@ def detect_status(name: str) -> MigrationStatus:
     - not_migrated : only legacy imports found
     - partial      : both kinds coexist (migration in progress)
     - no_imports   : no CKEditor imports at all (nothing to migrate)
+
+    A project override in .ckeditor-audit.json takes precedence over the
+    auto-detected status (to_delete / requires_reimplementation / aliased_to / skip).
     """
+    override = load_overrides().get(name)
+    if override and override.status in OVERRIDE_STATUSES:
+        return override.status  # type: ignore[return-value]
+
     has_legacy = False
     has_modern = False
 
@@ -221,6 +319,82 @@ def _is_commented(line: str) -> bool:
     return any(stripped.startswith(m) for m in _COMMENT_MARKERS)
 
 
+def _search_terms(plugin_name: str) -> list[str]:
+    """
+    Derive the strings a plugin can appear as across heterogeneous config files.
+
+    From the folder name we generate, deduplicated, longest first:
+      - the folder name itself  -> JS import paths ('ckeditor5-wordcount')
+      - PascalCase              -> builtinPlugins entries ('Wordcount', 'MediaEmbed')
+      - SCREAMING_SNAKE         -> PHP/YAML constants ('WORDCOUNT', 'MEDIA_EMBED')
+      - the lowercase suffix    -> JS string constants ('wordcount', 'media-embed')
+
+    Known blind spot: a single compound word with no hyphen ('wordcount') cannot be
+    reliably split, so the PHP-style 'WORD_COUNT' is not generated. Hyphenated names
+    ('media-embed' -> 'MEDIA_EMBED') are covered.
+    """
+    suffix = plugin_name.removeprefix("ckeditor5-")
+    parts = suffix.split("-")
+    pascal = "".join(p.capitalize() for p in parts)
+    screaming = "_".join(p.upper() for p in parts)
+    terms = [plugin_name]
+    for term in (pascal, screaming, suffix):
+        if term and term not in terms:
+            terms.append(term)
+    return terms
+
+
+@lru_cache(maxsize=512)
+def _term_patterns(plugin_name: str) -> tuple["re.Pattern[str]", ...]:
+    """Compile word-boundary regexes for each search term (cached per plugin).
+
+    Word boundaries (no adjacent alphanumeric) avoid false positives: 'box' does
+    not match 'toolbox', 'Box' does not match 'ckeditor5Box' or 'Boxed'.
+    """
+    return tuple(
+        re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])")
+        for term in _search_terms(plugin_name)
+    )
+
+
+def _plugin_in_line(name: str, line: str) -> bool:
+    """True if any search term for the plugin appears as a whole word in the line."""
+    return any(pat.search(line) for pat in _term_patterns(name))
+
+
+def parse_entrypoint() -> dict[str, set[str]]:
+    """
+    Parse the CKEditor entrypoint file (settings.entrypoint) and classify the
+    known plugins it references as 'active' (uncommented line) or 'commented'.
+
+    Returns {"active": set[str], "commented": set[str]}. Empty sets when the
+    entrypoint is not configured or the file is missing. A plugin appearing both
+    active and commented ends up in both sets; callers treat 'active' as winning.
+    """
+    path = settings.entrypoint
+    if path is None or not path.is_file():
+        return {"active": set(), "commented": set()}
+
+    active: set[str] = set()
+    commented: set[str] = set()
+    known = list_plugins()
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return {"active": set(), "commented": set()}
+
+    for line in lines:
+        for name in known:
+            if _plugin_in_line(name, line):
+                if _is_commented(line):
+                    commented.add(name)
+                else:
+                    active.add(name)
+
+    return {"active": active, "commented": commented}
+
+
 class UsageInfo:
     """Summary of how a plugin is referenced in one file."""
 
@@ -262,6 +436,13 @@ def configs_using(name: str) -> tuple[list[UsageInfo], int]:
                 seen.add(p)
                 candidates.append(p)
 
+    # Plus the explicit config_files declared in .ckeditor-audit.json (heterogeneous
+    # files outside the globs: ckeditor.js, *.yaml, *.php constants, plugins.js...).
+    for p in load_config_files():
+        if p.is_file() and p not in seen:
+            seen.add(p)
+            candidates.append(p)
+
     for file_path in candidates:
         try:
             lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -272,7 +453,7 @@ def configs_using(name: str) -> tuple[list[UsageInfo], int]:
         commented = False
 
         for line in lines:
-            if name not in line:
+            if not _plugin_in_line(name, line):
                 continue
             if _is_commented(line):
                 commented = True

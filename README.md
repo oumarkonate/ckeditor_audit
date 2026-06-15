@@ -36,6 +36,85 @@ The server also improves accuracy: it catches usages in commented-out code and s
 > by a specific entry is still caught by a generic fallback rule, so `suggest_migration` never returns
 > empty for a plugin that needs migrating.
 
+### Project overrides — `.ckeditor-audit.json`
+
+The 4 auto-detected statuses (`migrated` / `not_migrated` / `partial` / `no_imports`) are
+deduced from JS imports. Some decisions are **project-specific** and cannot be deduced from
+code — e.g. a plugin that should be **deleted**, one that was **renamed**, or one that needs a
+**functional rewrite**. Declare these in an optional `.ckeditor-audit.json` at the root of the
+audited project (override the path with `CKEDITOR_AUDIT_OVERRIDES_FILE`). The file is versioned
+in the audited project, **not** in the MCP — see [`.ckeditor-audit.json.example`](.ckeditor-audit.json.example).
+
+```json
+{
+  "plugins": {
+    "ckeditor5-old-image": {
+      "status": "aliased_to",
+      "aliased_to": "ckeditor5-image",
+      "reason": "Renamed during the refactor; the old dir lingers.",
+      "functional_replacement": "Image, ImageToolbar from 'ckeditor5'"
+    }
+  }
+}
+```
+
+| Override status | Behaviour in reports |
+|---|---|
+| `to_delete` | Dedicated **🗑️ À supprimer** section; excluded from the progress % denominator |
+| `aliased_to` | Removed from "non migrés"; listed under "À supprimer" with the rename note |
+| `requires_reimplementation` | Sub-section **♻️ Ré-implémentation requise** under "Non migrés" |
+| `skip` | Excluded from the report entirely |
+
+A malformed or absent file is ignored silently (the audit never crashes).
+
+#### `config_files` — multi-file active/commented detection
+
+A plugin's real state is often spread across heterogeneous files that are neither in
+`CKEDITOR_AUDIT_CONFIGS_GLOB` nor the single entrypoint: the editor entrypoint
+(`ckeditor.js`), YAML profiles, PHP constants, JS constant maps. List them under a
+`config_files` key (paths relative to the project root) and the audit cross-checks them all:
+
+```json
+{
+  "config_files": [
+    "assets/ckeditor/ckeditor.js",
+    "config/editor/ckeditor5.yaml",
+    "src/Form/CKEditorType.php",
+    "assets/config/ckeditor/plugins.js"
+  ],
+  "plugins": { }
+}
+```
+
+Because the same plugin appears under different spellings, each plugin is matched by **four
+terms on word boundaries** (so `box` never matches `toolbox`):
+
+| Term | Example (`ckeditor5-media-embed`) | Matches |
+|---|---|---|
+| folder name | `ckeditor5-media-embed` | JS import paths |
+| PascalCase | `MediaEmbed` | `builtinPlugins` entries |
+| SCREAMING_SNAKE | `MEDIA_EMBED` | PHP / YAML constants |
+| lowercase suffix | `media-embed` | JS string constants |
+
+> **Blind spot:** a single compound word with no hyphen (`ckeditor5-wordcount`) yields
+> `WORDCOUNT`, not `WORD_COUNT` — so a `PLUGIN_WORD_COUNT` constant for such a plugin is not
+> detected. Hyphenated names are fully covered.
+
+The MCP caches `.ckeditor-audit.json`; **restart it** after editing the file.
+
+### Entrypoint cross-check — `CKEDITOR_AUDIT_ENTRYPOINT`
+
+Set `CKEDITOR_AUDIT_ENTRYPOINT` (relative to the project root, e.g.
+`assets/ckeditor/ckeditor.js`) to cross-reference each plugin against the editor entrypoint and
+distinguish what is actually **active in production** from what is **commented out**:
+
+| Migration status | Entrypoint | Reported as |
+|---|---|---|
+| `migrated` | active | ✅ migré actif |
+| `migrated` | commented | 🔁 migré inactif (just uncomment) |
+| `not_migrated` | active | ⚡ non migré ET actif — **priority** |
+| `not_migrated` | commented | ❌ non migré inactif (low priority) |
+
 ### Migration assistance tools
 
 | Tool | Description |

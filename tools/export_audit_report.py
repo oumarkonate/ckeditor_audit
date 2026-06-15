@@ -21,6 +21,8 @@ from ckeditor_audit.lib.scanner import (
     detect_status,
     find_pattern_hits,
     list_plugins,
+    load_overrides,
+    parse_entrypoint,
     plugin_files,
     plugin_root,
 )
@@ -34,6 +36,7 @@ class ExportAuditReportResult(BaseModel):
     plugins_migrated: int
     plugins_partial: int
     plugins_not_migrated: int
+    plugins_to_delete: int
     output_path: str | None
     token_savings: TokenSavings
 
@@ -156,9 +159,14 @@ def export_audit_report(
     """
     root = settings.project_root
     plugins = list_plugins()
+    overrides = load_overrides()
+    entry = parse_entrypoint()
     rows: list[dict] = []
     for name in plugins:
         status = detect_status(name)
+        # `skip` plugins are excluded from the report entirely.
+        if status == "skip":
+            continue
         hits = find_pattern_hits(name)
         config_usages, _ = configs_using(name)
         pfiles = plugin_files(name)
@@ -168,6 +176,12 @@ def export_audit_report(
             for p in pfiles
             if "from 'ckeditor5'" in p.read_text(encoding="utf-8", errors="ignore")
         ]
+        if name in entry["active"]:
+            entrypoint_active: bool | None = True
+        elif name in entry["commented"]:
+            entrypoint_active = False
+        else:
+            entrypoint_active = None
         rows.append({
             "name": name,
             "status": status,
@@ -175,29 +189,46 @@ def export_audit_report(
             "file_count": len(pfiles),
             "config_usages": config_usages,
             "modern_files": modern_files,
+            "entrypoint_active": entrypoint_active,
         })
 
     migrated = sum(1 for r in rows if r["status"] == "migrated")
     partial = sum(1 for r in rows if r["status"] == "partial")
     not_migrated_count = sum(1 for r in rows if r["status"] == "not_migrated")
-    total = len(plugins)
-    pct = round(100 * migrated / total) if total else 0
+    reimpl_count = sum(1 for r in rows if r["status"] == "requires_reimplementation")
+    # aliased_to plugins are reported alongside to_delete ("à supprimer").
+    to_delete_count = sum(
+        1 for r in rows if r["status"] in ("to_delete", "aliased_to")
+    )
+    total = len(rows)
+    # Progress denominator excludes plugins flagged for deletion (to_delete /
+    # aliased_to) and skipped ones (already filtered out above).
+    countable = [r for r in rows if r["status"] not in ("to_delete", "aliased_to")]
+    denom = len(countable)
+    nm_for_pct = not_migrated_count + reimpl_count
+    pct = round(100 * migrated / denom) if denom else 0
 
     git = _git_info(root)
     stats = _collect_stats(rows)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    # not_migrated rows: prioritise those active in the entrypoint, then by issue count.
     nm_rows = sorted(
         [r for r in rows if r["status"] == "not_migrated"],
+        key=lambda r: (r["entrypoint_active"] is not True, len(r["hits"])),
+    )
+    reimpl_rows = sorted(
+        [r for r in rows if r["status"] == "requires_reimplementation"],
         key=lambda r: len(r["hits"]),
     )
+    to_delete_rows = [r for r in rows if r["status"] in ("to_delete", "aliased_to")]
     partial_rows = [r for r in rows if r["status"] == "partial"]
     migrated_rows = [r for r in rows if r["status"] == "migrated"]
 
     # ── Build Markdown (always, used for auto-save and for format="markdown") ──
     estimated_tokens_saved = total * TOKENS_PER_PLUGIN_REPORT
-    pct_partial = round(100 * partial / total) if total else 0
-    pct_nm = round(100 * not_migrated_count / total) if total else 0
+    pct_partial = round(100 * partial / denom) if denom else 0
+    pct_nm = round(100 * nm_for_pct / denom) if denom else 0
 
     md_lines = [
         "# CKEditor Migration Audit Report",
@@ -225,13 +256,14 @@ def export_audit_report(
     md_lines += [
         "### Avancement",
         "",
-        _progress_bar(migrated, total),
+        _progress_bar(migrated, denom),
         "",
         "| Statut | Plugins | % |",
         "|--------|---------|---|",
         f"| ✅ Migrés | {migrated} | {pct} % |",
         f"| ⚠️ Partiels | {partial} | {pct_partial} % |",
-        f"| ❌ Non migrés | {not_migrated_count} | {pct_nm} % |",
+        f"| ❌ Non migrés | {nm_for_pct} | {pct_nm} % |",
+        f"| 🗑️ À supprimer | {to_delete_count} | — |",
         f"| **Total** | **{total}** | |",
         "",
         "### Statistiques",
@@ -253,9 +285,31 @@ def export_audit_report(
         "",
     ]
 
-    # ── not_migrated, sub-grouped by complexity ──
-    if nm_rows:
-        md_lines += [f"## ❌ Non migrés ({len(nm_rows)} plugins)", ""]
+    # ── to_delete / aliased_to ──
+    if to_delete_rows:
+        md_lines += [f"## 🗑️ À supprimer ({len(to_delete_rows)} plugins)", ""]
+        for r in to_delete_rows:
+            meta = overrides.get(r["name"])
+            alias = meta.aliased_to if meta else ""
+            title = f"### `{r['name']}`"
+            if alias:
+                title += f" → `{alias}`"
+            md_lines += [title, ""]
+            if r["status"] == "aliased_to" and alias:
+                md_lines.append(f"- **Renommé en** : `{alias}`")
+            if meta and meta.reason:
+                md_lines.append(f"- **Raison** : {meta.reason}")
+            if meta and meta.functional_replacement:
+                md_lines.append(f"- **Remplacement** : {meta.functional_replacement}")
+            md_lines.append("")
+        md_lines += ["---", ""]
+
+    # ── not_migrated, sub-grouped by complexity (+ requires_reimplementation) ──
+    if nm_rows or reimpl_rows:
+        md_lines += [
+            f"## ❌ Non migrés ({len(nm_rows) + len(reimpl_rows)} plugins)",
+            "",
+        ]
 
         complexity_order = [("simple", "🟢"), ("medium", "🟡"), ("complex", "🔴")]
         complexity_labels = {
@@ -277,11 +331,19 @@ def export_audit_report(
             for r in grp:
                 active_c = sum(1 for u in r["config_usages"] if u.active)
                 commented_c = sum(1 for u in r["config_usages"] if u.commented)
+                prio = " ⚡ **prioritaire (actif en prod)**" if r["entrypoint_active"] is True else ""
+                if r["entrypoint_active"] is True:
+                    prod = "✅ actif"
+                elif r["entrypoint_active"] is False:
+                    prod = "💤 commenté (inactif)"
+                else:
+                    prod = "—"
                 md_lines += [
-                    f"#### `{r['name']}` — {len(r['hits'])} issue(s)",
+                    f"#### `{r['name']}` — {len(r['hits'])} issue(s){prio}",
                     "",
                     f"- **Fichiers JS** : {r['file_count']}  |  "
-                    f"**Configs** : {active_c} active, {commented_c} commentée",
+                    f"**Configs** : {active_c} active, {commented_c} commentée  |  "
+                    f"**Actif en prod** : {prod}",
                     "",
                 ]
                 _issues_table(r["hits"], md_lines)
@@ -289,6 +351,29 @@ def export_audit_report(
                     f"> Lancez `/ckeditor-migrate {r['name']}` pour appliquer ces corrections.",
                     "",
                 ]
+
+        # requires_reimplementation: not migrated, needs functional rework.
+        if reimpl_rows:
+            md_lines += [
+                f"### ♻️ Ré-implémentation requise — {len(reimpl_rows)} plugin(s)",
+                "",
+            ]
+            for r in reimpl_rows:
+                meta = overrides.get(r["name"])
+                md_lines += [f"#### `{r['name']}` — {len(r['hits'])} issue(s)", ""]
+                if meta and meta.reason:
+                    md_lines.append(f"- **Raison** : {meta.reason}")
+                if meta and meta.functional_replacement:
+                    md_lines.append(
+                        f"- **Remplacement** : {meta.functional_replacement}"
+                    )
+                md_lines.append(
+                    "- Ré-implémentation fonctionnelle nécessaire — "
+                    "un simple remplacement d'import ne suffit pas."
+                )
+                md_lines.append("")
+                _issues_table(r["hits"], md_lines)
+
         md_lines += ["---", ""]
 
     # ── partial ──
@@ -322,7 +407,13 @@ def export_audit_report(
     if migrated_rows:
         md_lines += [f"## ✅ Migrés ({len(migrated_rows)} plugins)", ""]
         for r in migrated_rows:
-            md_lines.append(f"- ✅ `{r['name']}` — aucun pattern legacy détecté")
+            if r["entrypoint_active"] is False:
+                md_lines.append(
+                    f"- 🔁 `{r['name']}` — migré mais commenté dans l'entrypoint "
+                    "(inactif en prod, il suffit de le décommenter)"
+                )
+            else:
+                md_lines.append(f"- ✅ `{r['name']}` — aucun pattern legacy détecté")
         md_lines.append("")
 
     md_content = "\n".join(md_lines)
@@ -350,6 +441,15 @@ def export_audit_report(
                 entry["complexity"] = level
             if r["status"] == "partial":
                 entry["modern_files"] = r["modern_files"]
+            if r["status"] in ("to_delete", "aliased_to", "requires_reimplementation"):
+                meta = overrides.get(r["name"])
+                if meta:
+                    entry["reason"] = meta.reason
+                    if meta.aliased_to:
+                        entry["aliased_to"] = meta.aliased_to
+                    if meta.functional_replacement:
+                        entry["functional_replacement"] = meta.functional_replacement
+            entry["active_in_entrypoint"] = r["entrypoint_active"]
             return entry
 
         data = {
@@ -361,7 +461,10 @@ def export_audit_report(
                     "migrated": migrated,
                     "partial": partial,
                     "not_migrated": not_migrated_count,
+                    "requires_reimplementation": reimpl_count,
+                    "to_delete": to_delete_count,
                     "total": total,
+                    "countable": denom,
                     "percent": pct,
                 },
                 "stats": stats,
@@ -375,7 +478,9 @@ def export_audit_report(
                 },
             },
             "groups": {
+                "to_delete": [_plugin_json(r) for r in to_delete_rows],
                 "not_migrated": [_plugin_json(r) for r in nm_rows],
+                "requires_reimplementation": [_plugin_json(r) for r in reimpl_rows],
                 "partial": [_plugin_json(r) for r in partial_rows],
                 "migrated": [_plugin_json(r) for r in migrated_rows],
             },
@@ -403,6 +508,7 @@ def export_audit_report(
         plugins_migrated=migrated,
         plugins_partial=partial,
         plugins_not_migrated=not_migrated_count,
+        plugins_to_delete=to_delete_count,
         output_path=written_path,
         token_savings=TokenSavings(
             files_scanned=total,

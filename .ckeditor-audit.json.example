@@ -1,0 +1,30 @@
+{
+  "_comment": "Project-specific plugin overrides for the ckeditor-audit MCP. Copy this file to the ROOT of the project you audit as `.ckeditor-audit.json` and version it THERE (not in the MCP). Each entry declares a decision that cannot be deduced from the code. All fields except `status` are optional.",
+  "_comment_config_files": "Extra files (relative to the project root) cross-checked to tell whether each plugin is active or commented in production: editor entrypoint, YAML profiles, PHP/JS constants. Plugins are matched by folder name, PascalCase, SCREAMING_SNAKE and lowercase suffix, on word boundaries.",
+  "config_files": [
+    "assets/ckeditor/ckeditor.js",
+    "config/editor/ckeditor5.yaml",
+    "src/Form/CKEditorType.php",
+    "assets/config/ckeditor/plugins.js"
+  ],
+  "plugins": {
+    "ckeditor5-legacy-box": {
+      "status": "to_delete",
+      "reason": "Doublon du widget natif depuis v40 — supprimer le dossier."
+    },
+    "ckeditor5-old-image": {
+      "status": "aliased_to",
+      "aliased_to": "ckeditor5-image",
+      "reason": "Renommé lors de la refonte — l'ancien dossier subsiste."
+    },
+    "ckeditor5-custom-mentions": {
+      "status": "requires_reimplementation",
+      "reason": "L'API Mention a changé — nécessite une ré-implémentation, pas un simple remplacement d'import.",
+      "functional_replacement": "Mention + MentionUI from 'ckeditor5'"
+    },
+    "ckeditor5-experimental": {
+      "status": "skip",
+      "reason": "Prototype hors périmètre de migration — exclu du rapport."
+    }
+  }
+}
