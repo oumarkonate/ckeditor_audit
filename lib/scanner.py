@@ -7,6 +7,7 @@ by config.Settings. They are called by the tool functions, not directly.
 
 import json
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -19,9 +20,66 @@ from ckeditor_audit.lib.patterns import PATTERNS, Pattern
 # Type aliases
 # ---------------------------------------------------------------------------
 
-# "no_imports" = a plugin directory with no CKEditor imports at all (nothing to
-# migrate); kept distinct from "not_migrated" (legacy imports present).
-MigrationStatus = Literal["migrated", "not_migrated", "partial", "no_imports"]
+# Auto-detected statuses (deduced from JS imports):
+#   "migrated" / "not_migrated" / "partial" — see detect_status().
+#   "no_imports" = a plugin directory with no CKEditor imports at all (nothing to
+#   migrate); kept distinct from "not_migrated" (legacy imports present).
+# Override statuses (declared in .ckeditor-audit.json, project-specific decisions
+# that cannot be deduced from code):
+#   "to_delete"                 — plugin to remove (native duplicate, dead code).
+#   "requires_reimplementation" — not migrated, needs functional rework.
+#   "aliased_to"                — renamed; old dir lingers, treated as "to delete".
+#   "skip"                      — excluded from the report entirely.
+MigrationStatus = Literal[
+    "migrated", "not_migrated", "partial", "no_imports",
+    "to_delete", "requires_reimplementation", "aliased_to", "skip",
+]
+
+# Override statuses that supersede the auto-detected migration status.
+OVERRIDE_STATUSES = frozenset(
+    {"to_delete", "requires_reimplementation", "aliased_to", "skip"}
+)
+
+
+@dataclass
+class PluginOverride:
+    """A project-specific override declared in .ckeditor-audit.json."""
+
+    status: str  # to_delete | requires_reimplementation | aliased_to | skip
+    reason: str = ""
+    aliased_to: str = ""
+    functional_replacement: str = ""
+
+
+@lru_cache(maxsize=1)
+def load_overrides() -> dict[str, "PluginOverride"]:
+    """
+    Load the optional .ckeditor-audit.json overrides file (settings.overrides_file).
+
+    Returns a mapping {plugin_name: PluginOverride}. Returns {} silently when the
+    file is absent, unreadable, or malformed — overrides must never crash an audit.
+    Cached; call load_overrides.cache_clear() if the file changes at runtime.
+    """
+    f = settings.overrides_file
+    if f is None or not f.is_file():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    result: dict[str, PluginOverride] = {}
+    for name, meta in (data.get("plugins") or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        result[name] = PluginOverride(
+            status=meta.get("status", ""),
+            reason=meta.get("reason", ""),
+            aliased_to=meta.get("aliased_to", ""),
+            functional_replacement=meta.get("functional_replacement", ""),
+        )
+    return result
 
 
 class PatternHit(object):
@@ -88,7 +146,14 @@ def detect_status(name: str) -> MigrationStatus:
     - not_migrated : only legacy imports found
     - partial      : both kinds coexist (migration in progress)
     - no_imports   : no CKEditor imports at all (nothing to migrate)
+
+    A project override in .ckeditor-audit.json takes precedence over the
+    auto-detected status (to_delete / requires_reimplementation / aliased_to / skip).
     """
+    override = load_overrides().get(name)
+    if override and override.status in OVERRIDE_STATUSES:
+        return override.status  # type: ignore[return-value]
+
     has_legacy = False
     has_modern = False
 
@@ -219,6 +284,39 @@ def _is_commented(line: str) -> bool:
     """Return True if the line appears to be a comment (heuristic)."""
     stripped = line.lstrip()
     return any(stripped.startswith(m) for m in _COMMENT_MARKERS)
+
+
+def parse_entrypoint() -> dict[str, set[str]]:
+    """
+    Parse the CKEditor entrypoint file (settings.entrypoint) and classify the
+    known plugins it references as 'active' (uncommented line) or 'commented'.
+
+    Returns {"active": set[str], "commented": set[str]}. Empty sets when the
+    entrypoint is not configured or the file is missing. A plugin appearing both
+    active and commented ends up in both sets; callers treat 'active' as winning.
+    """
+    path = settings.entrypoint
+    if path is None or not path.is_file():
+        return {"active": set(), "commented": set()}
+
+    active: set[str] = set()
+    commented: set[str] = set()
+    known = list_plugins()
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return {"active": set(), "commented": set()}
+
+    for line in lines:
+        for name in known:
+            if name in line:
+                if _is_commented(line):
+                    commented.add(name)
+                else:
+                    active.add(name)
+
+    return {"active": active, "commented": commented}
 
 
 class UsageInfo:

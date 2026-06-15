@@ -55,6 +55,13 @@ class Settings:
     # Whether to respect .gitignore when searching
     respect_gitignore: bool
 
+    # --- Project overrides / entrypoint (optional) ---
+    # Path to .ckeditor-audit.json (CKEDITOR_AUDIT_OVERRIDES_FILE). None if absent.
+    overrides_file: Path | None
+
+    # Path to the CKEditor entrypoint file (CKEDITOR_AUDIT_ENTRYPOINT). None if absent.
+    entrypoint: Path | None
+
 
 def _probe_rg() -> str | None:
     """Return path to rg binary, or None if not found."""
@@ -124,6 +131,19 @@ def _load() -> Settings:
         "CKEDITOR_AUDIT_RESPECT_GITIGNORE", "true"
     ).lower() in ("1", "true", "yes")
 
+    # Project overrides file: explicit path, else default to .ckeditor-audit.json
+    # at the project root when it exists. None when neither is available.
+    raw_overrides = os.environ.get("CKEDITOR_AUDIT_OVERRIDES_FILE", "").strip()
+    if raw_overrides:
+        overrides_file: Path | None = Path(raw_overrides)
+    else:
+        default_overrides = project_root / ".ckeditor-audit.json"
+        overrides_file = default_overrides if default_overrides.is_file() else None
+
+    # CKEditor entrypoint file (relative to project_root). None when not configured.
+    raw_entrypoint = os.environ.get("CKEDITOR_AUDIT_ENTRYPOINT", "").strip()
+    entrypoint: Path | None = (project_root / raw_entrypoint) if raw_entrypoint else None
+
     logger.info(
         "backend=%s rg=%s ast_grep=%s respect_gitignore=%s",
         backend, rg_available, ast_grep_available, respect_gitignore,
@@ -147,6 +167,8 @@ def _load() -> Settings:
         rg_available=rg_available,
         ast_grep_available=ast_grep_available,
         respect_gitignore=respect_gitignore,
+        overrides_file=overrides_file,
+        entrypoint=entrypoint,
     )
 
 

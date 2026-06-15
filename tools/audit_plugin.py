@@ -56,7 +56,7 @@ class PluginAudit(BaseModel):
     """Full migration report for a single plugin."""
 
     plugin: str
-    status: str          # "migrated" | "not_migrated" | "partial"
+    status: str          # migrated | not_migrated | partial | no_imports | to_delete | requires_reimplementation | aliased_to (from .ckeditor-audit.json overrides)
     legacy_label: str    # from config (e.g. "v26")
     target_label: str    # from config (e.g. "v47")
     issues: list[Issue]
