@@ -26,6 +26,8 @@ from ckeditor_audit.lib.patterns import PATTERNS, Pattern
 #   migrate); kept distinct from "not_migrated" (legacy imports present).
 # Override statuses (declared in .ckeditor-audit.json, project-specific decisions
 # that cannot be deduced from code):
+#   "not_migrated"              — force "not migrated" despite the auto-detection
+#                                 (e.g. ported code that is present but not wired up).
 #   "to_delete"                 — plugin to remove (native duplicate, dead code).
 #   "requires_reimplementation" — not migrated, needs functional rework.
 #   "aliased_to"                — renamed; old dir lingers, treated as "to delete".
@@ -37,7 +39,7 @@ MigrationStatus = Literal[
 
 # Override statuses that supersede the auto-detected migration status.
 OVERRIDE_STATUSES = frozenset(
-    {"to_delete", "requires_reimplementation", "aliased_to", "skip"}
+    {"not_migrated", "to_delete", "requires_reimplementation", "aliased_to", "skip"}
 )
 
 
@@ -45,7 +47,7 @@ OVERRIDE_STATUSES = frozenset(
 class PluginOverride:
     """A project-specific override declared in .ckeditor-audit.json."""
 
-    status: str  # to_delete | requires_reimplementation | aliased_to | skip
+    status: str  # not_migrated | to_delete | requires_reimplementation | aliased_to | skip
     reason: str = ""
     aliased_to: str = ""
     functional_replacement: str = ""
@@ -181,7 +183,8 @@ def detect_status(name: str) -> MigrationStatus:
     - no_imports   : no CKEditor imports at all (nothing to migrate)
 
     A project override in .ckeditor-audit.json takes precedence over the
-    auto-detected status (to_delete / requires_reimplementation / aliased_to / skip).
+    auto-detected status (not_migrated / to_delete / requires_reimplementation /
+    aliased_to / skip).
     """
     override = load_overrides().get(name)
     if override and override.status in OVERRIDE_STATUSES:

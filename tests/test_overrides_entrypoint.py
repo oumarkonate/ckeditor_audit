@@ -108,6 +108,25 @@ def test_requires_reimplementation_subsection(apply_overrides):
     assert "API Mention changée" in md
 
 
+def test_force_not_migrated_overrides_auto_detection(apply_overrides):
+    """A `not_migrated` override forces the status even when code auto-detects as
+    migrated (e.g. ported code that is present but not wired up)."""
+    apply_overrides(overrides={"plugins": {"ckeditor5-box": {
+        "status": "not_migrated",
+        "reason": "Porté mais non câblé dans l'entrypoint"}}})
+    from ckeditor_audit.tools.audit_all import audit_all
+    from ckeditor_audit.tools.audit_plugin import audit_plugin
+
+    report = audit_all()
+    statuses = _statuses(report)
+    # box auto-detects as migrated; the override flips it to not_migrated.
+    assert statuses["ckeditor5-box"] == "not_migrated"
+    # image (genuinely not migrated) + box (forced) → 2
+    assert report.not_migrated == 2
+    # the forced plugin carries no legacy issues (nothing to migrate)
+    assert audit_plugin("ckeditor5-box").status == "not_migrated"
+
+
 def test_skip_excluded_entirely(apply_overrides):
     apply_overrides(overrides={"plugins": {"ckeditor5-empty": {"status": "skip"}}})
     from ckeditor_audit.tools.audit_all import audit_all
