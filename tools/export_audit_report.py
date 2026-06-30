@@ -19,6 +19,7 @@ from ckeditor_audit.lib.patterns import PATTERNS
 from ckeditor_audit.lib.scanner import (
     configs_using,
     detect_status,
+    find_active_legacy_entrypoint_imports,
     find_pattern_hits,
     list_plugins,
     load_overrides,
@@ -161,6 +162,7 @@ def export_audit_report(
     plugins = list_plugins()
     overrides = load_overrides()
     entry = parse_entrypoint()
+    to_activate = find_active_legacy_entrypoint_imports()
     rows: list[dict] = []
     for name in plugins:
         status = detect_status(name)
@@ -264,6 +266,7 @@ def export_audit_report(
         f"| ⚠️ Partiels | {partial} | {pct_partial} % |",
         f"| ❌ Non migrés | {nm_for_pct} | {pct_nm} % |",
         f"| 🗑️ À supprimer | {to_delete_count} | — |",
+        f"| 🔌 À activer | {len(to_activate)} | — |",
         f"| **Total** | **{total}** | |",
         "",
         "### Statistiques",
@@ -303,6 +306,25 @@ def export_audit_report(
                 md_lines.append(f"- **Remplacement** : {meta.functional_replacement}")
             md_lines.append("")
         md_lines += ["---", ""]
+
+    # ── to_activate : imports actifs legacy, symbole commenté/absent dans builtinPlugins ──
+    if to_activate:
+        md_lines += [f"## 🔌 À activer ({len(to_activate)} imports)", ""]
+        md_lines += [
+            "> Ces imports sont actifs dans `ckeditor.js` avec un chemin legacy,",
+            "> mais leur symbole est commenté ou absent dans `builtinPlugins`.",
+            "> Aucune migration profonde requise — corriger le chemin et décommenter.",
+            "",
+            "| Symbole | Chemin legacy | Remplacement | État builtinPlugins |",
+            "|---------|--------------|--------------|---------------------|",
+        ]
+        for issue in to_activate:
+            src = issue.legacy_source.replace("|", "\\|")
+            repl = issue.modern_replacement.replace("|", "\\|")
+            md_lines.append(
+                f"| `{issue.symbol}` | `{src}` | `{repl}` | {issue.builtin_status} |"
+            )
+        md_lines += ["", "---", ""]
 
     # ── not_migrated, sub-grouped by complexity (+ requires_reimplementation) ──
     if nm_rows or reimpl_rows:
@@ -479,6 +501,7 @@ def export_audit_report(
             },
             "groups": {
                 "to_delete": [_plugin_json(r) for r in to_delete_rows],
+                "to_activate": [i.model_dump() for i in to_activate],
                 "not_migrated": [_plugin_json(r) for r in nm_rows],
                 "requires_reimplementation": [_plugin_json(r) for r in reimpl_rows],
                 "partial": [_plugin_json(r) for r in partial_rows],

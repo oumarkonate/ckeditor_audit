@@ -13,37 +13,6 @@ import json
 import pytest
 
 
-@pytest.fixture
-def apply_overrides(monkeypatch, project_root):
-    """Return a helper that installs overrides and/or an entrypoint for one test."""
-    # Imported here (not at module top) so the env-setting autouse fixture has
-    # already run before config._load() executes.
-    from ckeditor_audit.config import settings as base_settings
-    from ckeditor_audit.lib import scanner
-
-    created = []
-
-    def _apply(overrides=None, entrypoint=None):
-        ovr_file = None
-        if overrides is not None:
-            ovr_file = project_root / ".ckeditor-audit.json.test"
-            raw = overrides if isinstance(overrides, str) else json.dumps(overrides)
-            ovr_file.write_text(raw, encoding="utf-8")
-            created.append(ovr_file)
-        new = dataclasses.replace(
-            base_settings, overrides_file=ovr_file, entrypoint=entrypoint
-        )
-        monkeypatch.setattr(scanner, "settings", new)
-        scanner.invalidate_caches()
-        return new
-
-    yield _apply
-
-    scanner.invalidate_caches()
-    for f in created:
-        f.unlink(missing_ok=True)
-
-
 def _statuses(report):
     return {p.plugin: p.status for p in report.plugins}
 
