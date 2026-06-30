@@ -9,7 +9,9 @@ from pydantic import BaseModel
 
 from ckeditor_audit.config import settings
 from ckeditor_audit.lib.scanner import (
+    EntrypointImportIssue,
     detect_status,
+    find_active_legacy_entrypoint_imports,
     list_plugins,
     load_overrides,
     parse_entrypoint,
@@ -49,6 +51,8 @@ class AuditAllReport(BaseModel):
     target_label: str
     plugins: list[PluginSummary]
     token_savings: TokenSavings
+    to_activate_imports: int = 0
+    entrypoint_issues: list[EntrypointImportIssue] = []
 
 
 def audit_all() -> AuditAllReport:
@@ -102,6 +106,7 @@ def audit_all() -> AuditAllReport:
     )
 
     estimated_saved = total_source_files * TOKENS_PER_SOURCE_FILE
+    entrypoint_issues = find_active_legacy_entrypoint_imports()
 
     return AuditAllReport(
         total=len(summaries),
@@ -114,6 +119,8 @@ def audit_all() -> AuditAllReport:
         legacy_label=settings.legacy_label,
         target_label=settings.target_label,
         plugins=summaries,
+        to_activate_imports=len(entrypoint_issues),
+        entrypoint_issues=entrypoint_issues,
         token_savings=TokenSavings(
             files_scanned=total_source_files,
             estimated_tokens_saved=estimated_saved,

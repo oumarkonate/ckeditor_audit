@@ -16,6 +16,7 @@ from mcp.server.mcpserver import MCPServer
 from ckeditor_audit.tools.list_patterns import list_patterns
 from ckeditor_audit.tools.audit_plugin import audit_plugin
 from ckeditor_audit.tools.audit_all import audit_all
+from ckeditor_audit.tools.audit_entrypoint import audit_entrypoint
 from ckeditor_audit.tools.find_plugin_usages import find_plugin_usages
 from ckeditor_audit.tools.audit_dependencies import audit_dependencies
 
@@ -97,6 +98,7 @@ mcp = MCPServer(
 mcp.tool()(list_patterns)
 mcp.tool()(audit_plugin)
 mcp.tool()(audit_all)
+mcp.tool()(audit_entrypoint)
 mcp.tool()(find_plugin_usages)
 mcp.tool()(audit_dependencies)
 
@@ -147,4 +149,4 @@ mcp.tool()(find_in_file_diff)
 register_resources(mcp)
 register_prompts(mcp)
 
-logger.info("ckeditor-audit server ready — 33 tools, 1 resource, 1 prompt registered")
+logger.info("ckeditor-audit server ready — 34 tools, 1 resource, 1 prompt registered")

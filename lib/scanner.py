@@ -12,6 +12,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import BaseModel
+
 from ckeditor_audit.config import settings
 from ckeditor_audit.lib.patterns import PATTERNS, Pattern
 
@@ -41,6 +43,16 @@ MigrationStatus = Literal[
 OVERRIDE_STATUSES = frozenset(
     {"not_migrated", "to_delete", "requires_reimplementation", "aliased_to", "skip"}
 )
+
+
+class EntrypointImportIssue(BaseModel):
+    """Un import actif legacy dans l'entrypoint dont le symbole n'est pas activé dans builtinPlugins."""
+
+    symbol: str               # "Autosave"
+    legacy_source: str        # "@ckeditor/ckeditor5-autosave/src/autosave"
+    modern_replacement: str   # "import { Autosave } from 'ckeditor5'"
+    builtin_status: str       # "commented" | "missing"
+    line: int                 # numéro de ligne 1-based dans ckeditor.js
 
 
 @dataclass
@@ -396,6 +408,141 @@ def parse_entrypoint() -> dict[str, set[str]]:
                     active.add(name)
 
     return {"active": active, "commented": commented}
+
+
+# Regex pour un import ES actif de la forme :  import Symbol from '@ckeditor/...'
+_ACTIVE_LEGACY_IMPORT_RE = re.compile(
+    r"""\s*import\s+(\w+)\s+from\s+['"](@ckeditor/[^'"]+)['"]"""
+)
+
+# Identifiants JS (symboles potentiels dans builtinPlugins)
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_]\w*")
+
+# Mots-clés JS à ignorer lors du scan des identifiants dans le bloc builtinPlugins
+_JS_KEYWORDS = frozenset({
+    "static", "class", "extends", "Plugin", "return", "const", "let", "var",
+    "function", "new", "this", "true", "false", "null", "undefined", "if",
+    "else", "for", "while", "do", "switch", "case", "break", "continue",
+    "import", "export", "default", "from", "async", "await", "of", "in",
+})
+
+
+def _parse_builtin_plugins(lines: list[str]) -> tuple[set[str], set[str]]:
+    """
+    Extraire les symboles actifs et commentés du bloc `builtinPlugins = [...]`.
+
+    Gère les deux formes :
+      - multi-lignes  : `static builtinPlugins = [\\n  // Autosave,\\n  Bold,\\n]`
+      - mono-ligne    : `static builtinPlugins = [ Bold, // Autosave, ]`
+
+    Pour chaque segment de texte, on partitionne au premier `//` :
+      - la partie gauche (code) → identifiants actifs
+      - la partie droite (commentaire) → identifiants commentés
+
+    Retourne (active: set[str], commented: set[str]).
+    """
+    active: set[str] = set()
+    commented: set[str] = set()
+
+    # Localiser le début du bloc : première ligne contenant `builtinPlugins` ET `[`
+    start_idx = None
+    for i, line in enumerate(lines):
+        if "builtinPlugins" in line and "[" in line:
+            start_idx = i
+            break
+    if start_idx is None:
+        return active, commented
+
+    # Accumuler les lignes du bloc jusqu'à la ligne contenant `]`
+    block_lines: list[str] = []
+    for i in range(start_idx, len(lines)):
+        line = lines[i]
+        block_lines.append(line)
+        # On s'arrête dès qu'on rencontre `]` (fermeture du tableau)
+        if i > start_idx and "]" in line:
+            break
+        if i == start_idx and line.count("[") <= line.count("]"):
+            # cas mono-ligne : `builtinPlugins = [ ... ]`
+            break
+
+    # Extraire le contenu entre `[` et `]`
+    raw = "\n".join(block_lines)
+    bracket_open = raw.find("[")
+    bracket_close = raw.rfind("]")
+    if bracket_open == -1 or bracket_close == -1:
+        return active, commented
+    inner = raw[bracket_open + 1:bracket_close]
+
+    # Traiter chaque ligne du contenu interne
+    for segment in inner.split("\n"):
+        code_part, _, comment_part = segment.partition("//")
+        for ident in _IDENTIFIER_RE.findall(code_part):
+            if ident not in _JS_KEYWORDS:
+                active.add(ident)
+        for ident in _IDENTIFIER_RE.findall(comment_part):
+            if ident not in _JS_KEYWORDS:
+                commented.add(ident)
+
+    # Un symbole actif prime sur commenté (s'il est dans les deux, il est actif)
+    commented -= active
+    return active, commented
+
+
+def find_active_legacy_entrypoint_imports() -> list["EntrypointImportIssue"]:
+    """
+    Détecter les imports actifs legacy dans l'entrypoint CKEditor (ckeditor.js)
+    dont le symbole est commenté ou absent dans `builtinPlugins`.
+
+    Ces plugins natifs CKEditor (disponibles dans 'ckeditor5') ne nécessitent
+    pas de migration profonde : corriger le chemin d'import et décommenter.
+
+    Retourne [] si l'entrypoint n'est pas configuré ou le fichier est absent.
+    """
+    path = settings.entrypoint
+    if path is None or not path.is_file():
+        return []
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return []
+
+    # Phase 1 — collecter les imports actifs legacy (non commentés, source @ckeditor/)
+    # dict: symbol -> (legacy_source, line_number_1based)
+    legacy_imports: dict[str, tuple[str, int]] = {}
+    for lineno, line in enumerate(lines, start=1):
+        if _is_commented(line):
+            continue
+        m = _ACTIVE_LEGACY_IMPORT_RE.match(line)
+        if m:
+            symbol, source = m.group(1), m.group(2)
+            if symbol not in legacy_imports:  # premier import gagne
+                legacy_imports[symbol] = (source, lineno)
+
+    if not legacy_imports:
+        return []
+
+    # Phase 2 — parser builtinPlugins
+    builtin_active, builtin_commented = _parse_builtin_plugins(lines)
+
+    # Croisement
+    issues: list[EntrypointImportIssue] = []
+    for symbol, (source, lineno) in legacy_imports.items():
+        if symbol in builtin_active:
+            continue  # chemin legacy mais déjà câblé — autre problème, hors scope
+        if symbol in builtin_commented:
+            status = "commented"
+        else:
+            status = "missing"
+        issues.append(EntrypointImportIssue(
+            symbol=symbol,
+            legacy_source=source,
+            modern_replacement=f"import {{ {symbol} }} from 'ckeditor5'",
+            builtin_status=status,
+            line=lineno,
+        ))
+
+    return sorted(issues, key=lambda i: i.line)
 
 
 class UsageInfo:
