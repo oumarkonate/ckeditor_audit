@@ -184,9 +184,9 @@ distinguish what is actually **active in production** from what is **commented o
 ### Prompts
 - `migrate_plugin(plugin)` — Guided step-by-step migration prompt: assembles current status, detected legacy patterns, and concrete instructions.
 
-## Claude Code Skills (slash commands)
+## Skills (slash commands) — Claude Code and Gemini CLI
 
-Three skills are bundled in `skills/` and made globally available via symlinks in `~/.claude/skills/`:
+Three skills are bundled in `skills/` and made globally available via symlinks in `~/.claude/skills/` (Claude Code) and `~/.gemini/skills/` (Gemini CLI):
 
 | Skill | Command | Description |
 |---|---|---|
@@ -194,7 +194,7 @@ Three skills are bundled in `skills/` and made globally available via symlinks i
 | `ckeditor-migrate` | `/ckeditor-migrate <plugin>` | Full migration workflow for one plugin: audit → suggest fixes → apply → validate |
 | `ckeditor-report` | `/ckeditor-report` | Generate and display the full Markdown/JSON audit report |
 
-Skills are **user-invocable** (type the slash command) and also **auto-triggered** when you mention CKEditor migration in conversation. See [SETUP.md — Skills](SETUP.md#7-install-claude-code-skills) for the symlink setup.
+Skills are **user-invocable** (type the slash command) and also **auto-triggered** when you mention CKEditor migration in conversation. See [SETUP.md — Skills](SETUP.md#7-install-the-skills-claude-code-and-gemini-cli) for the symlink setup (both agents).
 
 ## Quick test
 

@@ -149,10 +149,11 @@ Fully quit and restart Claude Desktop after any change to this file (no hot-relo
 
 Add a `.mcp.json` at the root of your project — same format as above.
 
-## 7. Install Claude Code Skills
+## 7. Install the skills (Claude Code and Gemini CLI)
 
 The repository ships three slash commands in `skills/`. They live in the project for versioning and
-are linked into the global Claude Code skills directory so they are available in every session.
+are linked into the global skills directory of each agent — `~/.claude/skills/` for Claude Code,
+`~/.gemini/skills/` for Gemini CLI — so they are available in every session.
 
 ### What gets installed
 
@@ -164,70 +165,79 @@ are linked into the global Claude Code skills directory so they are available in
 
 ### macOS / Linux
 
-```bash
-# Create the global skills directory if it doesn't exist yet
-mkdir -p ~/.claude/skills
+Run from the repository root (`ckeditor_audit/`):
 
-# Create one symlink per skill
-ln -s /path/to/mcp/ckeditor_audit/skills/ckeditor-audit   ~/.claude/skills/ckeditor-audit
-ln -s /path/to/mcp/ckeditor_audit/skills/ckeditor-migrate ~/.claude/skills/ckeditor-migrate
-ln -s /path/to/mcp/ckeditor_audit/skills/ckeditor-report  ~/.claude/skills/ckeditor-report
+```bash
+# Claude Code
+mkdir -p ~/.claude/skills
+ln -sfn "$(pwd)/skills/ckeditor-audit"   ~/.claude/skills/ckeditor-audit
+ln -sfn "$(pwd)/skills/ckeditor-migrate" ~/.claude/skills/ckeditor-migrate
+ln -sfn "$(pwd)/skills/ckeditor-report"  ~/.claude/skills/ckeditor-report
+
+# Gemini CLI
+mkdir -p ~/.gemini/skills
+ln -sfn "$(pwd)/skills/ckeditor-audit"   ~/.gemini/skills/ckeditor-audit
+ln -sfn "$(pwd)/skills/ckeditor-migrate" ~/.gemini/skills/ckeditor-migrate
+ln -sfn "$(pwd)/skills/ckeditor-report"  ~/.gemini/skills/ckeditor-report
 ```
+
+`-n` replaces an existing link instead of creating a nested one, so the commands can be re-run
+safely after moving the repository.
 
 ### Windows (PowerShell — run as Administrator)
 
 ```powershell
-# Create the global skills directory if it doesn't exist yet
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills"
-
-# Create one symlink per skill
-New-Item -ItemType SymbolicLink `
-  -Path "$env:USERPROFILE\.claude\skills\ckeditor-audit" `
-  -Target "C:\path\to\mcp\ckeditor_audit\skills\ckeditor-audit"
-
-New-Item -ItemType SymbolicLink `
-  -Path "$env:USERPROFILE\.claude\skills\ckeditor-migrate" `
-  -Target "C:\path\to\mcp\ckeditor_audit\skills\ckeditor-migrate"
-
-New-Item -ItemType SymbolicLink `
-  -Path "$env:USERPROFILE\.claude\skills\ckeditor-report" `
-  -Target "C:\path\to\mcp\ckeditor_audit\skills\ckeditor-report"
+foreach ($agent in ".claude", ".gemini") {
+  New-Item -ItemType Directory -Force "$env:USERPROFILE\$agent\skills" | Out-Null
+  foreach ($skill in "ckeditor-audit", "ckeditor-migrate", "ckeditor-report") {
+    New-Item -ItemType SymbolicLink `
+      -Path "$env:USERPROFILE\$agent\skills\$skill" `
+      -Target "C:\path\to\mcp\ckeditor_audit\skills\$skill"
+  }
+}
 ```
 
 > **Why symlinks?** The skill files live in the project so they are versioned alongside the server
-> code and updated with `git pull`. The symlinks make them visible to Claude Code globally without
+> code and updated with `git pull`. The symlinks make them visible to each agent globally without
 > duplicating the files.
 
 ### Verify
 
-In any Claude Code session (Claude Desktop or CLI), type `/` — the three skills should appear in
-the autocomplete list. Or try directly:
+In any Claude Code or Gemini CLI session, type `/` — the three skills should appear in the
+autocomplete list. Or try directly:
 
 ```
 /ckeditor-audit
 ```
 
-Claude will call `audit_all` and display the migration dashboard.
+The agent will call `audit_all` and display the migration dashboard.
+
+The test suite checks the installation too: `tests/test_skills_installation.py` fails if a skill
+is missing from an agent's skills directory (when that directory exists), if a link is broken, or
+if a skill is not documented here and in the README.
 
 ### Update after `git pull`
 
 No action needed — the symlinks point to the project files, so pulling updates to `skills/` is
-immediately reflected in the global skills directory.
+immediately reflected in the global skills directories. A **new** skill needs its two links
+(and its rows in the tables above and in the README).
 
 ### Remove the skills
 
 ```bash
 # macOS / Linux
-rm ~/.claude/skills/ckeditor-audit
-rm ~/.claude/skills/ckeditor-migrate
-rm ~/.claude/skills/ckeditor-report
+for agent in .claude .gemini; do
+  rm -f ~/$agent/skills/ckeditor-audit ~/$agent/skills/ckeditor-migrate ~/$agent/skills/ckeditor-report
+done
 ```
 
 ```powershell
 # Windows
-Remove-Item "$env:USERPROFILE\.claude\skills\ckeditor-audit"
-Remove-Item "$env:USERPROFILE\.claude\skills\ckeditor-migrate"
-Remove-Item "$env:USERPROFILE\.claude\skills\ckeditor-report"
+foreach ($agent in ".claude", ".gemini") {
+  foreach ($skill in "ckeditor-audit", "ckeditor-migrate", "ckeditor-report") {
+    Remove-Item "$env:USERPROFILE\$agent\skills\$skill"
+  }
+}
 ```
 
 ## 8. Environment variables reference
